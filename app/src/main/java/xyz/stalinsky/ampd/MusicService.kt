@@ -43,45 +43,46 @@ class MusicService : MediaLibraryService() {
     override fun onCreate() {
         super.onCreate()
 
-        val connection = OkHttpClient.Builder()
-            .cache(Cache(cacheDir, 24 * 1024 * 1024)) // 256 MiB
+        val connection = OkHttpClient.Builder().cache(Cache(cacheDir, 24 * 1024 * 1024)) // 256 MiB
             .build()
 
-        session = MediaLibrarySession.Builder(this, SessionPlayerConnector(ExoPlayer.Builder(this)
-            .setAudioAttributes(AudioAttributes.Builder()
-                .setContentType(C.CONTENT_TYPE_MUSIC)
-                .setUsage(C.USAGE_MEDIA)
-                .build(), true)
-            .setMediaSourceFactory(object : MediaSourceFactory {
-                override fun setDrmSessionManagerProvider(drmSessionManagerProvider: DrmSessionManagerProvider?): MediaSourceFactory {
-                    TODO("Not yet implemented")
-                }
+        session = MediaLibrarySession.Builder(this,
+            SessionPlayerConnector(ExoPlayer.Builder(this)
+                .setAudioAttributes(AudioAttributes.Builder().setContentType(C.CONTENT_TYPE_MUSIC).setUsage(C.USAGE_MEDIA).build(), true)
+                .setMediaSourceFactory(object : MediaSourceFactory {
+                    override fun setDrmSessionManagerProvider(drmSessionManagerProvider: DrmSessionManagerProvider?): MediaSourceFactory {
+                        TODO("Not yet implemented")
+                    }
 
-                override fun setDrmSessionManager(drmSessionManager: DrmSessionManager?): MediaSourceFactory {
-                    TODO("Not yet implemented")
-                }
+                    override fun setDrmSessionManager(drmSessionManager: DrmSessionManager?): MediaSourceFactory {
+                        TODO("Not yet implemented")
+                    }
 
-                override fun setDrmHttpDataSourceFactory(drmHttpDataSourceFactory: HttpDataSource.Factory?): MediaSourceFactory {
-                    TODO("Not yet implemented")
-                }
+                    override fun setDrmHttpDataSourceFactory(drmHttpDataSourceFactory: HttpDataSource.Factory?): MediaSourceFactory {
+                        TODO("Not yet implemented")
+                    }
 
-                override fun setDrmUserAgent(userAgent: String?): MediaSourceFactory {
-                    TODO("Not yet implemented")
-                }
+                    override fun setDrmUserAgent(userAgent: String?): MediaSourceFactory {
+                        TODO("Not yet implemented")
+                    }
 
-                override fun setLoadErrorHandlingPolicy(loadErrorHandlingPolicy: LoadErrorHandlingPolicy?): MediaSourceFactory {
-                    TODO("Not yet implemented")
-                }
+                    override fun setLoadErrorHandlingPolicy(loadErrorHandlingPolicy: LoadErrorHandlingPolicy?): MediaSourceFactory {
+                        TODO("Not yet implemented")
+                    }
 
-                override fun getSupportedTypes(): IntArray {
-                    TODO("Not yet implemented")
-                }
+                    override fun getSupportedTypes(): IntArray {
+                        TODO("Not yet implemented")
+                    }
 
-                override fun createMediaSource(mediaItem: com.google.android.exoplayer2.MediaItem) =
-                    ProgressiveMediaSource.Factory(OkHttpDataSource.Factory { connection.newCall(Request.Builder().url(it.url).build()) }).createMediaSource(mediaItem)
+                    override fun createMediaSource(mediaItem: com.google.android.exoplayer2.MediaItem) =
+                        ProgressiveMediaSource.Factory(OkHttpDataSource.Factory {
+                            connection.newCall(Request.Builder().url(it.url).build())
+                        }).createMediaSource(mediaItem)
 
-            })
-            .build()), executor, Callback()).build()
+                })
+                .build()),
+            executor,
+            Callback()).build()
     }
 
     override fun onDestroy() {
@@ -95,8 +96,7 @@ class MusicService : MediaLibraryService() {
         executor.awaitTermination(Long.MAX_VALUE, TimeUnit.DAYS)
     }
 
-    override fun onGetSession(controllerInfo: MediaSession.ControllerInfo) =
-        session
+    override fun onGetSession(controllerInfo: MediaSession.ControllerInfo) = session
 
     class Callback : MediaLibrarySession.MediaLibrarySessionCallback() {
         private var connected = false
@@ -106,10 +106,7 @@ class MusicService : MediaLibraryService() {
 
         private var mediaLibrary: String? = null
 
-        override fun onConnect(
-            session: MediaSession,
-            controller: MediaSession.ControllerInfo
-        ): SessionCommandGroup {
+        override fun onConnect(session: MediaSession, controller: MediaSession.ControllerInfo): SessionCommandGroup {
             clients[controller] = Stack()
 
             return SessionCommandGroup.Builder()
@@ -119,12 +116,10 @@ class MusicService : MediaLibraryService() {
                 .build()
         }
 
-        override fun onCustomCommand(
-            session: MediaSession,
+        override fun onCustomCommand(session: MediaSession,
             controller: MediaSession.ControllerInfo,
             customCommand: SessionCommand,
-            args: Bundle?
-        ): SessionResult {
+            args: Bundle?): SessionResult {
             when (customCommand) {
                 COMMAND_MPD_CONNECT -> {
                     if (connected) {
@@ -132,9 +127,8 @@ class MusicService : MediaLibraryService() {
                         connected = false
                     }
 
-                    if (args == null || !args.containsKey(COMMAND_ARG_MPD_HOST) || !args.containsKey(
-                            COMMAND_ARG_MPD_PORT))
-                        return SessionResult(SessionResult.RESULT_ERROR_BAD_VALUE, null)
+                    if (args == null || !args.containsKey(COMMAND_ARG_MPD_HOST) || !args.containsKey(COMMAND_ARG_MPD_PORT)) return SessionResult(SessionResult.RESULT_ERROR_BAD_VALUE,
+                        null)
 
                     val host = args.getString(COMMAND_ARG_MPD_HOST, "")
                     val port = args.getInt(COMMAND_ARG_MPD_PORT, -1)
@@ -150,8 +144,7 @@ class MusicService : MediaLibraryService() {
                 }
 
                 COMMAND_SET_MEDIA_LIBRARY -> {
-                    if (args == null || !args.containsKey(COMMAND_ARG_MEDIA_LIBRARY))
-                        return SessionResult(SessionResult.RESULT_ERROR_BAD_VALUE, null)
+                    if (args == null || !args.containsKey(COMMAND_ARG_MEDIA_LIBRARY)) return SessionResult(SessionResult.RESULT_ERROR_BAD_VALUE, null)
 
                     mediaLibrary = args.getString(COMMAND_ARG_MEDIA_LIBRARY)!!
                 }
@@ -169,15 +162,14 @@ class MusicService : MediaLibraryService() {
         }
 
         private val metadataBuilder = MediaMetadata.Builder().putLong(MediaMetadata.METADATA_KEY_PLAYABLE, 0)
-            private val rootNodes = listOf(MediaItem.Builder()
-                .setMetadata(metadataBuilder
-                    .putString(MediaMetadata.METADATA_KEY_MEDIA_ID, "/artists")
-                    .putLong(MediaMetadata.METADATA_KEY_BROWSABLE, MediaMetadata.BROWSABLE_TYPE_ARTISTS)
-                    .putString(MediaMetadata.METADATA_KEY_TITLE, "Artists")
-                    .build())
-                .build(), MediaItem.Builder()
-                .setMetadata(metadataBuilder
-                    .putString(MediaMetadata.METADATA_KEY_MEDIA_ID, "/albums")
+        private val rootNodes = listOf(MediaItem.Builder()
+            .setMetadata(metadataBuilder.putString(MediaMetadata.METADATA_KEY_MEDIA_ID, "/artists")
+                .putLong(MediaMetadata.METADATA_KEY_BROWSABLE, MediaMetadata.BROWSABLE_TYPE_ARTISTS)
+                .putString(MediaMetadata.METADATA_KEY_TITLE, "Artists")
+                .build())
+            .build(),
+            MediaItem.Builder()
+                .setMetadata(metadataBuilder.putString(MediaMetadata.METADATA_KEY_MEDIA_ID, "/albums")
                     .putLong(MediaMetadata.METADATA_KEY_BROWSABLE, MediaMetadata.BROWSABLE_TYPE_ALBUMS)
                     .putString(MediaMetadata.METADATA_KEY_TITLE, "Albums")
                     .build())
@@ -197,8 +189,7 @@ class MusicService : MediaLibraryService() {
         }
 
         override fun onSubscribe(session: MediaLibrarySession, controller: MediaSession.ControllerInfo, parentId: String, params: LibraryParams?): Int {
-            if (parentId.startsWith("/artists/") || parentId.startsWith("/albums/"))
-                clients[controller]!!.push(Pair(parentId, mutableMapOf()))
+            if (parentId.startsWith("/artists/") || parentId.startsWith("/albums/")) clients[controller]!!.push(Pair(parentId, mutableMapOf()))
 
             session.notifyChildrenChanged(controller, parentId, rootNodes.size, params)
 
@@ -206,36 +197,34 @@ class MusicService : MediaLibraryService() {
         }
 
         override fun onUnsubscribe(session: MediaLibrarySession, controller: MediaSession.ControllerInfo, parentId: String): Int {
-            if (!clients[controller]!!.empty() && clients[controller]!!.peek().first != parentId)
-                return LibraryResult.RESULT_ERROR_BAD_VALUE
+            if (!clients[controller]!!.empty() && clients[controller]!!.peek().first != parentId) return LibraryResult.RESULT_ERROR_BAD_VALUE
 
             clients[controller]!!.pop()
 
             return LibraryResult.RESULT_SUCCESS
         }
 
-        override fun onGetLibraryRoot(session: MediaLibrarySession,
-                                      controller: MediaSession.ControllerInfo,
-                                      params: LibraryParams?): LibraryResult {
-            if (mediaLibrary == null)
-                return LibraryResult(LibraryResult.RESULT_ERROR_INVALID_STATE)
+        override fun onGetLibraryRoot(session: MediaLibrarySession, controller: MediaSession.ControllerInfo, params: LibraryParams?): LibraryResult {
+            if (mediaLibrary == null) return LibraryResult(LibraryResult.RESULT_ERROR_INVALID_STATE)
 
             return LibraryResult(LibraryResult.RESULT_SUCCESS,
-                    MediaItem.Builder().setMetadata(MediaMetadata.Builder().putLong(MediaMetadata.METADATA_KEY_PLAYABLE, 0)
+                MediaItem.Builder()
+                    .setMetadata(MediaMetadata.Builder()
+                        .putLong(MediaMetadata.METADATA_KEY_PLAYABLE, 0)
                         .putString(MediaMetadata.METADATA_KEY_MEDIA_ID, "/")
                         .putLong(MediaMetadata.METADATA_KEY_BROWSABLE, MediaMetadata.BROWSABLE_TYPE_MIXED)
                         .build())
-                        .build(), params)
+                    .build(),
+                params)
         }
 
         override fun onGetChildren(session: MediaLibrarySession,
-                                   controller: MediaSession.ControllerInfo,
-                                   parentId: String,
-                                   page: Int,
-                                   pageSize: Int,
-                                   params: LibraryParams?): LibraryResult {
-            if (!clients[controller]!!.empty() && clients[controller]!!.peek()?.first != parentId)
-                return LibraryResult(LibraryResult.RESULT_ERROR_INVALID_STATE)
+            controller: MediaSession.ControllerInfo,
+            parentId: String,
+            page: Int,
+            pageSize: Int,
+            params: LibraryParams?): LibraryResult {
+            if (!clients[controller]!!.empty() && clients[controller]!!.peek()?.first != parentId) return LibraryResult(LibraryResult.RESULT_ERROR_INVALID_STATE)
 
             when {
                 parentId == "/" -> {
@@ -259,8 +248,8 @@ class MusicService : MediaLibraryService() {
 
                             while (artistId.startsWith("Artist: ")) {
                                 artists.add(MediaItem.Builder()
-                                    .setMetadata(metadataBuilder
-                                        .putString(MediaMetadata.METADATA_KEY_MEDIA_ID, "/artists/noid/${artistId.drop("Artist: ".length)}")
+                                    .setMetadata(metadataBuilder.putString(MediaMetadata.METADATA_KEY_MEDIA_ID,
+                                        "/artists/noid/${artistId.drop("Artist: ".length)}")
                                         .putString(MediaMetadata.METADATA_KEY_TITLE, artistId.drop("Artist: ".length)) // The artistId is also their name
                                         .build())
                                     .build())
@@ -272,17 +261,14 @@ class MusicService : MediaLibraryService() {
 
                             val name = line.drop("Artist: ".length)
                             artists.add(MediaItem.Builder()
-                                .setMetadata(metadataBuilder
-                                    .putString(MediaMetadata.METADATA_KEY_MEDIA_ID, "/artists/$artistId")
+                                .setMetadata(metadataBuilder.putString(MediaMetadata.METADATA_KEY_MEDIA_ID, "/artists/$artistId")
                                     .putString(MediaMetadata.METADATA_KEY_TITLE, name)
                                     .build())
-                                .build())
-                            // Some artists have multiple names but have the same MusicBrainz ID
+                                .build()) // Some artists have multiple names but have the same MusicBrainz ID
                             // We use the first name that is returned by MPD
                             artistId = reader.readLine()
 
-                            while (artistId.startsWith("Artist: "))
-                                artistId = reader.readLine()
+                            while (artistId.startsWith("Artist: ")) artistId = reader.readLine()
                         }
                     }
 
@@ -319,40 +305,38 @@ class MusicService : MediaLibraryService() {
                                         putString(METADATA_EXTRA_ARTIST_ID, "/artists/noid/$artistName")
                                     })
 
-                                    if (albumId.isEmpty()) {
-                                        // ARTISTID is empty && ALUBMID is empty
+                                    if (albumId.isEmpty()) { // ARTISTID is empty && ALUBMID is empty
                                         line = reader.readLine()
                                         val albumTitle = line.drop("Album: ".length)
 
-                                        sb.appendLine("find \"((artist == \\\"${artistName.replace("\"", "\\\\\\\"")}\\\") AND (album == \\\"${albumTitle.replace("\"", "\\\\\\\"")}\\\"))\" window 0:1")
+                                        sb.appendLine("find \"((artist == \\\"${
+                                            artistName.replace("\"", "\\\\\\\"")
+                                        }\\\") AND (album == \\\"${albumTitle.replace("\"", "\\\\\\\"")}\\\"))\" window 0:1")
 
-                                        metadataBuilder
-                                            .putString(MediaMetadata.METADATA_KEY_MEDIA_ID, "/albums/noid/noid/$artistName/$albumTitle")
+                                        metadataBuilder.putString(MediaMetadata.METADATA_KEY_MEDIA_ID, "/albums/noid/noid/$artistName/$albumTitle")
                                             .putString(MediaMetadata.METADATA_KEY_TITLE, albumTitle) // The artistId is also their name
                                             .putString(MediaMetadata.METADATA_KEY_ARTIST, artistName)
-                                    } else {
-                                        // ARTISTID is empty && ALUBMID isn't empty
+                                    } else { // ARTISTID is empty && ALUBMID isn't empty
                                         line = reader.readLine()
                                         val albumTitle = line.drop("Album: ".length)
 
-                                        sb.appendLine("find \"((artist == \\\"${artistName.replace("\"", "\\\\\\\"")}\\\") AND (MUSICBRAINZ_ALBUMID == \\\"$albumId\\\"))\" window 0:1")
+                                        sb.appendLine("find \"((artist == \\\"${
+                                            artistName.replace("\"", "\\\\\\\"")
+                                        }\\\") AND (MUSICBRAINZ_ALBUMID == \\\"$albumId\\\"))\" window 0:1")
 
-                                        metadataBuilder
-                                            .putString(MediaMetadata.METADATA_KEY_MEDIA_ID, "/albums/$albumId") // TODO: Check if MusicBrainz ALBUMID is unique per artist or unique in general
+                                        metadataBuilder.putString(MediaMetadata.METADATA_KEY_MEDIA_ID,
+                                            "/albums/$albumId") // TODO: Check if MusicBrainz ALBUMID is unique per artist or unique in general
                                             .putString(MediaMetadata.METADATA_KEY_TITLE, albumTitle) // The artistId is also their name
                                             .putString(MediaMetadata.METADATA_KEY_ARTIST, artistName)
                                     }
 
-                                    albums.add(itemBuilder
-                                        .setMetadata(metadataBuilder.build())
-                                        .build())
+                                    albums.add(itemBuilder.setMetadata(metadataBuilder.build()).build())
 
                                     line = reader.readLine()
                                 }
                             }
                         } else {
-                            line = reader.readLine()
-                            // The same artistID can have multiple names
+                            line = reader.readLine() // The same artistID can have multiple names
                             while (line.startsWith("Artist: ")) {
                                 val artistName = line.drop("Artist: ".length)
 
@@ -364,32 +348,29 @@ class MusicService : MediaLibraryService() {
                                         putString(METADATA_EXTRA_ARTIST_ID, "/artists/$artistId")
                                     })
 
-                                    if (albumId.isEmpty()) {
-                                        // ARTISTID isn't empty && ALUBMID is empty
+                                    if (albumId.isEmpty()) { // ARTISTID isn't empty && ALUBMID is empty
                                         line = reader.readLine()
                                         val albumTitle = line.drop("Album: ".length)
-                                        sb.appendLine("find \"((MUSICBRAINZ_ARTISTID == \\\"$artistId\\\") AND (album == \\\"${albumTitle.replace("\"", "\\\\\\\"")}\\\"))\" window 0:1")
+                                        sb.appendLine("find \"((MUSICBRAINZ_ARTISTID == \\\"$artistId\\\") AND (album == \\\"${
+                                            albumTitle.replace("\"", "\\\\\\\"")
+                                        }\\\"))\" window 0:1")
 
-                                        metadataBuilder
-                                            .putString(MediaMetadata.METADATA_KEY_MEDIA_ID, "/albums/noid/$artistId/$albumTitle")
+                                        metadataBuilder.putString(MediaMetadata.METADATA_KEY_MEDIA_ID, "/albums/noid/$artistId/$albumTitle")
                                             .putString(MediaMetadata.METADATA_KEY_TITLE, albumTitle) // The artistId is also their name
                                             .putString(MediaMetadata.METADATA_KEY_ARTIST, artistName)
-                                    } else {
-                                        // ARTISTID isn't empty && ALUBMID isn't empty
+                                    } else { // ARTISTID isn't empty && ALUBMID isn't empty
                                         line = reader.readLine()
                                         val albumTitle = line.drop("Album: ".length)
 
                                         sb.appendLine("find \"((MUSICBRAINZ_ARTISTID == \\\"$artistId\\\") AND (MUSICBRAINZ_ALBUMID == \\\"$albumId\\\"))\" window 0:1")
 
-                                        metadataBuilder
-                                            .putString(MediaMetadata.METADATA_KEY_MEDIA_ID, "/albums/$albumId") // TODO: Check if MusicBrainz ALBUMID is unique per artist or unique in general
+                                        metadataBuilder.putString(MediaMetadata.METADATA_KEY_MEDIA_ID,
+                                            "/albums/$albumId") // TODO: Check if MusicBrainz ALBUMID is unique per artist or unique in general
                                             .putString(MediaMetadata.METADATA_KEY_TITLE, albumTitle) // The artistId is also their name
                                             .putString(MediaMetadata.METADATA_KEY_ARTIST, artistName)
                                     }
 
-                                    albums.add(itemBuilder
-                                        .setMetadata(metadataBuilder.build())
-                                        .build())
+                                    albums.add(itemBuilder.setMetadata(metadataBuilder.build()).build())
 
                                     line = reader.readLine()
                                 }
@@ -410,27 +391,21 @@ class MusicService : MediaLibraryService() {
                         line = reader.readLine()
                         while (!line.startsWith("file: ") && line != "OK") {
                             when {
-                                line.startsWith("MUSICBRAINZ_ARTISTID: ") ->
-                                    artistId = line.drop("MUSICBRAINZ_ARTISTID: ".length)
+                                line.startsWith("MUSICBRAINZ_ARTISTID: ") -> artistId = line.drop("MUSICBRAINZ_ARTISTID: ".length)
 
-                                line.startsWith("Artist: ") ->
-                                    artistName = line.drop("Artist: ".length)
+                                line.startsWith("Artist: ") -> artistName = line.drop("Artist: ".length)
 
-                                line.startsWith("MUSICBRAINZ_ALBUMID: ") ->
-                                    albumId = line.drop("MUSICBRAINZ_ALBUMID: ".length)
+                                line.startsWith("MUSICBRAINZ_ALBUMID: ") -> albumId = line.drop("MUSICBRAINZ_ALBUMID: ".length)
 
-                                line.startsWith("Album: ") ->
-                                    albumTitle = line.drop("Album: ".length)
+                                line.startsWith("Album: ") -> albumTitle = line.drop("Album: ".length)
                             }
 
                             line = reader.readLine()
                         }
 
                         val album = if (albumId.isEmpty()) {
-                            if (artistId.isEmpty())
-                                albums.find { it.metadata!!.getString(MediaMetadata.METADATA_KEY_MEDIA_ID) == "/albums/noid/noid/$artistName/$albumTitle" }!!
-                            else
-                                albums.find { it.metadata!!.getString(MediaMetadata.METADATA_KEY_MEDIA_ID) == "/albums/noid/$artistId/$albumTitle" }!!
+                            if (artistId.isEmpty()) albums.find { it.metadata!!.getString(MediaMetadata.METADATA_KEY_MEDIA_ID) == "/albums/noid/noid/$artistName/$albumTitle" }!!
+                            else albums.find { it.metadata!!.getString(MediaMetadata.METADATA_KEY_MEDIA_ID) == "/albums/noid/$artistId/$albumTitle" }!!
                         } else {
                             albums.find { it.metadata!!.getString(MediaMetadata.METADATA_KEY_MEDIA_ID) == "/albums/$albumId" }!!
                         }
@@ -445,10 +420,10 @@ class MusicService : MediaLibraryService() {
 
                 parentId.startsWith("/artists") -> {
                     val artistId = parentId.drop("/artists".length)
-                    val buffer = if (artistId.startsWith("/noid"))
-                        timeoutInhibitor.send("find \"(artist == \\\"${artistId.drop("/noid/".length).replace("\"", "\\\\\\\"")}\\\")\"\n")
-                    else
-                        timeoutInhibitor.send("find \"(MUSICBRAINZ_ARTISTID == \\\"${artistId.drop(1)}\\\")\"\n")
+                    val buffer = if (artistId.startsWith("/noid")) timeoutInhibitor.send("find \"(artist == \\\"${
+                        artistId.drop("/noid/".length).replace("\"", "\\\\\\\"")
+                    }\\\")\"\n")
+                    else timeoutInhibitor.send("find \"(MUSICBRAINZ_ARTISTID == \\\"${artistId.drop(1)}\\\")\"\n")
 
                     val items = mutableListOf<MediaItem>()
                     val reader = BufferedReader(StringReader(StandardCharsets.UTF_8.decode(buffer).toString()))
@@ -463,20 +438,15 @@ class MusicService : MediaLibraryService() {
                         line = reader.readLine()
                         while (!line.startsWith("file: ") && line != "OK") {
                             when {
-                                line.startsWith("Artist: ") ->
-                                    artistName = line.drop("Artist: ".length)
+                                line.startsWith("Artist: ") -> artistName = line.drop("Artist: ".length)
 
-                                line.startsWith("MUSICBRAINZ_ALBUMID: ") ->
-                                    albumId = line.drop("MUSICBRAINZ_ALBUMID: ".length)
+                                line.startsWith("MUSICBRAINZ_ALBUMID: ") -> albumId = line.drop("MUSICBRAINZ_ALBUMID: ".length)
 
-                                line.startsWith("Album: ") ->
-                                    albumTitle = line.drop("Album: ".length)
+                                line.startsWith("Album: ") -> albumTitle = line.drop("Album: ".length)
 
-                                line.startsWith("duration: ") ->
-                                    duration = line.drop("duration: ".length).toDouble().toLong()
+                                line.startsWith("duration: ") -> duration = line.drop("duration: ".length).toDouble().toLong()
 
-                                line.startsWith("Title: ") ->
-                                    title = line.drop("Title: ".length)
+                                line.startsWith("Title: ") -> title = line.drop("Title: ".length)
                             }
 
                             line = reader.readLine()

@@ -55,94 +55,75 @@ import java.util.concurrent.Executors
 import kotlin.math.roundToInt
 
 class MainActivity : ComponentActivity() {
-    private val executor = Executors.newSingleThreadExecutor()
-    //private val executor = { it: Runnable -> queue.put(Optional.of(it)) }
+    private val executor = Executors.newSingleThreadExecutor() //private val executor = { it: Runnable -> queue.put(Optional.of(it)) }
 
-    private val playingState: MutableLiveData<Int> =
-        MutableLiveData(SessionPlayer.PLAYER_STATE_IDLE)
+    private val playingState: MutableLiveData<Int> = MutableLiveData(SessionPlayer.PLAYER_STATE_IDLE)
+
     @ExperimentalMaterialApi
     private val playlistState: MutableLiveData<List<Pair<String, Song>>> = MutableLiveData(listOf())
-    private val currentItemState: MutableLiveData<Pair<Int, Bitmap?>> =
-        MutableLiveData(Pair(-1, null))
+    private val currentItemState: MutableLiveData<Pair<Int, Bitmap?>> = MutableLiveData(Pair(-1, null))
 
     // This is a map that represents the main view window
     // The key is the mediaId of a root mediaItem e.g. "/artists"
     // The value is a pair where first is the name of the category e.g. "Artists"
     // and second is a list of composeables used to render the list e.g.
     // listOf(ArtistView(), ArtistView())
-    private var categories: MutableLiveData<Map<String, Pair<String, MutableLiveData<List<@Composable () -> Unit>?>>>?> =
-        MutableLiveData(null)
+    private var categories: MutableLiveData<Map<String, Pair<String, MutableLiveData<List<@Composable () -> Unit>?>>>?> = MutableLiveData(null)
 
     private lateinit var controller: MediaBrowser
 
     private val connectionState = MutableLiveData(ConnectionState.CONNECTING)
 
     private val backstack = java.util.Stack<Screen>()
-    private val screenState: MutableLiveData<Screen> =
-        MutableLiveData(Screen.MainScreen(categories))
+    private val screenState: MutableLiveData<Screen> = MutableLiveData(Screen.MainScreen(categories))
 
     private var mpdHost = ""
     private var mpdPort = -1
     private var mediaLibrary = ""
 
-    private val listener =
-        SharedPreferences.OnSharedPreferenceChangeListener { sharedPreferences, key ->
-            val onValueChanged = {
-                Futures.addCallback(controller.sendCustomCommand(
-                    MusicService.COMMAND_MPD_CONNECT, Bundle().apply {
-                        putString(MusicService.COMMAND_ARG_MPD_HOST, mpdHost)
-                        putInt(MusicService.COMMAND_ARG_MPD_PORT, mpdPort)
-                    }), object : FutureCallback<SessionResult> {
-                    override fun onSuccess(result: SessionResult?) {
-                        if (result != null && result.resultCode == SessionResult.RESULT_SUCCESS) {
-                            connectionState.postValue(ConnectionState.CONNECTED)
-                            val params = MediaLibraryService.LibraryParams.Builder().build()
-                            controller.subscribe(
-                                controller.getLibraryRoot(params)
-                                    .get().mediaItem?.metadata?.mediaId!!, params
-                            )
-                        } else {
-                            connectionState.postValue(ConnectionState.ERROR)
-                        }
+    private val listener = SharedPreferences.OnSharedPreferenceChangeListener { sharedPreferences, key ->
+        val onValueChanged = {
+            Futures.addCallback(controller.sendCustomCommand(MusicService.COMMAND_MPD_CONNECT, Bundle().apply {
+                putString(MusicService.COMMAND_ARG_MPD_HOST, mpdHost)
+                putInt(MusicService.COMMAND_ARG_MPD_PORT, mpdPort)
+            }), object : FutureCallback<SessionResult> {
+                override fun onSuccess(result: SessionResult?) {
+                    if (result != null && result.resultCode == SessionResult.RESULT_SUCCESS) {
+                        connectionState.postValue(ConnectionState.CONNECTED)
+                        val params = MediaLibraryService.LibraryParams.Builder().build()
+                        controller.subscribe(controller.getLibraryRoot(params).get().mediaItem?.metadata?.mediaId!!, params)
+                    } else {
+                        connectionState.postValue(ConnectionState.ERROR)
                     }
-
-                    override fun onFailure(t: Throwable) {
-                        t.printStackTrace()
-                    }
-                }, executor
-                )
-            }
-
-            when (key) {
-                "mpd_host_preference" -> {
-                    mpdHost = sharedPreferences.getString(key, "") ?: ""
-                    onValueChanged()
                 }
 
-                "mpd_port_preference" -> {
-                    mpdPort = sharedPreferences.getString(key, "")?.toIntOrNull() ?: -1
-                    onValueChanged()
+                override fun onFailure(t: Throwable) {
+                    t.printStackTrace()
                 }
-
-                "media_library_host_preference" -> {
-                    mediaLibrary = sharedPreferences.getString(key, "") ?: ""
-                    controller.sendCustomCommand(
-                        MusicService.COMMAND_SET_MEDIA_LIBRARY,
-                        Bundle().apply {
-                            putString(
-                                MusicService.COMMAND_ARG_MEDIA_LIBRARY,
-                                mediaLibrary
-                            )
-                        })
-                }
-            }
+            }, executor)
         }
 
-    @OptIn(
-        ExperimentalMaterialApi::class,
-        ExperimentalPagerApi::class,
-        ExperimentalAnimationApi::class
-    )
+        when (key) {
+            "mpd_host_preference" -> {
+                mpdHost = sharedPreferences.getString(key, "") ?: ""
+                onValueChanged()
+            }
+
+            "mpd_port_preference" -> {
+                mpdPort = sharedPreferences.getString(key, "")?.toIntOrNull() ?: -1
+                onValueChanged()
+            }
+
+            "media_library_host_preference" -> {
+                mediaLibrary = sharedPreferences.getString(key, "") ?: ""
+                controller.sendCustomCommand(MusicService.COMMAND_SET_MEDIA_LIBRARY, Bundle().apply {
+                    putString(MusicService.COMMAND_ARG_MEDIA_LIBRARY, mediaLibrary)
+                })
+            }
+        }
+    }
+
+    @OptIn(ExperimentalMaterialApi::class, ExperimentalPagerApi::class, ExperimentalAnimationApi::class)
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
@@ -158,38 +139,30 @@ class MainActivity : ComponentActivity() {
             .build()
 
         setContent {
-            AMPDTheme {
-                // A surface container using the 'background' color from the theme
+            AMPDTheme { // A surface container using the 'background' color from the theme
                 Surface(color = MaterialTheme.colors.background) {
-                    Main(
-                        connectionState,
+                    Main(connectionState,
                         {
                             val screen = screenState.value
-                            if (screen is Screen.ArtistScreen)
-                                controller.unsubscribe(screen.id)
+                            if (screen is Screen.ArtistScreen) controller.unsubscribe(screen.id)
 
                             screenState.postValue(backstack.pop())
                         },
                         screenState,
                         PlayerState(playingState, playlistState, currentItemState),
-                        { playlist, index ->
-                            // Start playing the tapped item immediately and then add the rest of the playlist
+                        { playlist, index -> // Start playing the tapped item immediately and then add the rest of the playlist
                             controller.setPlaylist(playlist, null).addListener({
                                 controller.skipToPlaylistItem(index).addListener({
-                                    if (controller.playerState == SessionPlayer.PLAYER_STATE_IDLE)
-                                        controller.prepare().addListener({
-                                            controller.play()
-                                        }, executor)
-                                    else if (controller.playerState == SessionPlayer.PLAYER_STATE_PAUSED)
+                                    if (controller.playerState == SessionPlayer.PLAYER_STATE_IDLE) controller.prepare().addListener({
                                         controller.play()
+                                    }, executor)
+                                    else if (controller.playerState == SessionPlayer.PLAYER_STATE_PAUSED) controller.play()
                                 }, executor)
                             }, executor)
                         },
                         {
-                            if (playingState.value == SessionPlayer.PLAYER_STATE_PAUSED)
-                                controller.play()
-                            else if (playingState.value == SessionPlayer.PLAYER_STATE_PLAYING)
-                                controller.pause()
+                            if (playingState.value == SessionPlayer.PLAYER_STATE_PAUSED) controller.play()
+                            else if (playingState.value == SessionPlayer.PLAYER_STATE_PLAYING) controller.pause()
                         },
                         { controller.skipToPreviousPlaylistItem() },
                         { controller.skipToNextPlaylistItem() }) {
@@ -205,67 +178,47 @@ class MainActivity : ComponentActivity() {
         controller.close()
         executor.shutdown()
 
-        PreferenceManager.getDefaultSharedPreferences(this)
-            .unregisterOnSharedPreferenceChangeListener(listener)
+        PreferenceManager.getDefaultSharedPreferences(this).unregisterOnSharedPreferenceChangeListener(listener)
     }
 
     inner class Callback : MediaBrowser.BrowserCallback() {
         @OptIn(ExperimentalMaterialApi::class)
-        override fun onConnected(
-            controller: MediaController,
-            allowedCommands: SessionCommandGroup
-        ) {
+        override fun onConnected(controller: MediaController, allowedCommands: SessionCommandGroup) {
             playingState.postValue(controller.playerState)
             playlistState.postValue(controller.playlist?.map {
-                Pair(
-                    it.metadata?.getString(MediaMetadata.METADATA_KEY_MEDIA_ID)!!,
-                    Song(
-                        it.metadata?.getString(MediaMetadata.METADATA_KEY_TITLE)!!,
+                Pair(it.metadata?.getString(MediaMetadata.METADATA_KEY_MEDIA_ID)!!,
+                    Song(it.metadata?.getString(MediaMetadata.METADATA_KEY_TITLE)!!,
                         it.metadata?.extras?.getString(MusicService.METADATA_EXTRA_ARTIST_ID)!!,
                         it.metadata?.getString(MediaMetadata.METADATA_KEY_ARTIST)!!,
                         it.metadata?.extras?.getString(MusicService.METADATA_EXTRA_ALBUM_ID)!!,
                         it.metadata?.getString(MediaMetadata.METADATA_KEY_ALBUM)!!,
-                        it.metadata?.getString((MediaMetadata.METADATA_KEY_ALBUM_ART_URI))
-                    )
-                )
+                        it.metadata?.getString((MediaMetadata.METADATA_KEY_ALBUM_ART_URI))))
             })
 
-            currentItemState.postValue(
-                Pair(
-                    controller.currentMediaItemIndex,
-                    null
-                )
-            ) // TODO: Use Glide to load the current item's art
+            currentItemState.postValue(Pair(controller.currentMediaItemIndex, null)) // TODO: Use Glide to load the current item's art
 
-            controller.sendCustomCommand(
-                MusicService.COMMAND_SET_MEDIA_LIBRARY,
-                Bundle().apply { putString(MusicService.COMMAND_ARG_MEDIA_LIBRARY, mediaLibrary) })
-                .addListener({
+            controller.sendCustomCommand(MusicService.COMMAND_SET_MEDIA_LIBRARY,
+                Bundle().apply { putString(MusicService.COMMAND_ARG_MEDIA_LIBRARY, mediaLibrary) }).addListener({
 
-                    Futures.addCallback(controller.sendCustomCommand(
-                        MusicService.COMMAND_MPD_CONNECT, Bundle().apply {
-                            putString(MusicService.COMMAND_ARG_MPD_HOST, mpdHost)
-                            putInt(MusicService.COMMAND_ARG_MPD_PORT, mpdPort)
-                        }), object : FutureCallback<SessionResult> {
-                        override fun onSuccess(result: SessionResult?) {
-                            if (result != null && result.resultCode == SessionResult.RESULT_SUCCESS) {
-                                connectionState.postValue(ConnectionState.CONNECTED)
-                                val params = MediaLibraryService.LibraryParams.Builder().build()
-                                (controller as MediaBrowser).subscribe(
-                                    controller.getLibraryRoot(params)
-                                        .get().mediaItem?.metadata?.mediaId!!, params
-                                )
-                            } else {
-                                connectionState.postValue(ConnectionState.ERROR)
-                            }
+                Futures.addCallback(controller.sendCustomCommand(MusicService.COMMAND_MPD_CONNECT, Bundle().apply {
+                    putString(MusicService.COMMAND_ARG_MPD_HOST, mpdHost)
+                    putInt(MusicService.COMMAND_ARG_MPD_PORT, mpdPort)
+                }), object : FutureCallback<SessionResult> {
+                    override fun onSuccess(result: SessionResult?) {
+                        if (result != null && result.resultCode == SessionResult.RESULT_SUCCESS) {
+                            connectionState.postValue(ConnectionState.CONNECTED)
+                            val params = MediaLibraryService.LibraryParams.Builder().build()
+                            (controller as MediaBrowser).subscribe(controller.getLibraryRoot(params).get().mediaItem?.metadata?.mediaId!!, params)
+                        } else {
+                            connectionState.postValue(ConnectionState.ERROR)
                         }
+                    }
 
-                        override fun onFailure(t: Throwable) {
-                            t.printStackTrace()
-                        }
-                    }, executor
-                    )
+                    override fun onFailure(t: Throwable) {
+                        t.printStackTrace()
+                    }
                 }, executor)
+            }, executor)
         }
 
         override fun onDisconnected(controller: MediaController) {
@@ -277,51 +230,35 @@ class MainActivity : ComponentActivity() {
 
             val uri = item?.metadata?.getString(MediaMetadata.METADATA_KEY_ALBUM_ART_URI)
 
-            Glide.with(this@MainActivity).asBitmap().load(if (uri != null) Uri.parse(uri) else null)
-                .into(object : CustomTarget<Bitmap>() {
-                    override fun onResourceReady(
-                        resource: Bitmap,
-                        transition: Transition<in Bitmap>?
-                    ) {
-                        currentItemState.postValue(Pair(currentItemState.value!!.first, resource))
-                    }
+            Glide.with(this@MainActivity).asBitmap().load(if (uri != null) Uri.parse(uri) else null).into(object : CustomTarget<Bitmap>() {
+                override fun onResourceReady(resource: Bitmap, transition: Transition<in Bitmap>?) {
+                    currentItemState.postValue(Pair(currentItemState.value!!.first, resource))
+                }
 
-                    override fun onLoadCleared(placeholder: Drawable?) {
-                        TODO("Not yet implemented")
-                    }
-                })
+                override fun onLoadCleared(placeholder: Drawable?) {
+                    TODO("Not yet implemented")
+                }
+            })
         }
 
-        override fun onCustomCommand(
-            controller: MediaController,
-            command: SessionCommand,
-            args: Bundle?
-        ): SessionResult {
+        override fun onCustomCommand(controller: MediaController, command: SessionCommand, args: Bundle?): SessionResult {
             controller.close()
             Log.i("MainActivity.Callback", "closed")
             return SessionResult(SessionResult.RESULT_SUCCESS, null)
         }
 
         @OptIn(ExperimentalMaterialApi::class)
-        override fun onPlaylistChanged(
-            controller: MediaController,
-            list: MutableList<MediaItem>?,
-            metadata: MediaMetadata?
-        ) {
+        override fun onPlaylistChanged(controller: MediaController, list: MutableList<MediaItem>?, metadata: MediaMetadata?) {
             currentItemState.postValue(Pair(controller.currentMediaItemIndex, null))
 
             playlistState.postValue(list?.map {
-                Pair(
-                    it.metadata?.getString(MediaMetadata.METADATA_KEY_MEDIA_ID)!!,
-                    Song(
-                        it.metadata?.getString(MediaMetadata.METADATA_KEY_TITLE)!!,
+                Pair(it.metadata?.getString(MediaMetadata.METADATA_KEY_MEDIA_ID)!!,
+                    Song(it.metadata?.getString(MediaMetadata.METADATA_KEY_TITLE)!!,
                         it.metadata?.extras?.getString(MusicService.METADATA_EXTRA_ARTIST_ID)!!,
                         it.metadata?.getString(MediaMetadata.METADATA_KEY_ARTIST)!!,
                         it.metadata?.extras?.getString(MusicService.METADATA_EXTRA_ALBUM_ID)!!,
                         it.metadata?.getString(MediaMetadata.METADATA_KEY_ALBUM)!!,
-                        it.metadata?.getString((MediaMetadata.METADATA_KEY_ALBUM_ART_URI))
-                    )
-                )
+                        it.metadata?.getString((MediaMetadata.METADATA_KEY_ALBUM_ART_URI))))
             })
         }
 
@@ -329,22 +266,14 @@ class MainActivity : ComponentActivity() {
             playingState.postValue(state)
         }
 
-        override fun onChildrenChanged(
-            browser: MediaBrowser,
-            parentId: String,
-            itemCount: Int,
-            params: MediaLibraryService.LibraryParams?
-        ) {
+        override fun onChildrenChanged(browser: MediaBrowser, parentId: String, itemCount: Int, params: MediaLibraryService.LibraryParams?) {
             when {
                 parentId == "/" -> {
                     val children = browser.getChildren("/", 0, 3, params).get().mediaItems
                     categories.postValue(children?.associateBy({
                         it.metadata?.getString(MediaMetadata.METADATA_KEY_MEDIA_ID)!!
                     }, {
-                        Pair(
-                            it.metadata?.getString(MediaMetadata.METADATA_KEY_TITLE)!!,
-                            MutableLiveData(null)
-                        )
+                        Pair(it.metadata?.getString(MediaMetadata.METADATA_KEY_TITLE)!!, MutableLiveData(null))
                     }))
                     for (child in children!!) {
                         val id = child.metadata?.getString(MediaMetadata.METADATA_KEY_MEDIA_ID)!!
@@ -354,26 +283,14 @@ class MainActivity : ComponentActivity() {
 
                 parentId == "/artists" -> {
                     val children = browser.getChildren("/artists", 0, Int.MAX_VALUE, params)
-                        .get().mediaItems?.map {
-                            // Couldn't find how to return a @Composable expression directly
+                        .get().mediaItems?.map { // Couldn't find how to return a @Composable expression directly
                             val composable: @Composable () -> Unit = {
-                                ArtistView(
-                                    it.metadata?.getString(MediaMetadata.METADATA_KEY_TITLE) ?: ""
-                                ) {
+                                ArtistView(it.metadata?.getString(MediaMetadata.METADATA_KEY_TITLE) ?: "") {
                                     backstack.push(screenState.value)
-                                    screenState.postValue(
-                                        Screen.ArtistScreen(
-                                            it.metadata?.getString(
-                                                MediaMetadata.METADATA_KEY_MEDIA_ID
-                                            )!!,
-                                            it.metadata?.getString(MediaMetadata.METADATA_KEY_TITLE)!!,
-                                            MutableLiveData(null)
-                                        )
-                                    )
-                                    browser.subscribe(
-                                        it.metadata?.getString(MediaMetadata.METADATA_KEY_MEDIA_ID)!!,
-                                        params
-                                    )
+                                    screenState.postValue(Screen.ArtistScreen(it.metadata?.getString(MediaMetadata.METADATA_KEY_MEDIA_ID)!!,
+                                        it.metadata?.getString(MediaMetadata.METADATA_KEY_TITLE)!!,
+                                        MutableLiveData(null)))
+                                    browser.subscribe(it.metadata?.getString(MediaMetadata.METADATA_KEY_MEDIA_ID)!!, params)
                                 }
                             }
 
@@ -385,16 +302,12 @@ class MainActivity : ComponentActivity() {
 
                 parentId == "/albums" -> {
                     val children = browser.getChildren("/albums", 0, Int.MAX_VALUE, params)
-                        .get().mediaItems?.map {
-                            // Couldn't find how to return a @Composable expression directly
+                        .get().mediaItems?.map { // Couldn't find how to return a @Composable expression directly
                             val composable: @Composable () -> Unit = {
-                                AlbumView(
-                                    it.metadata?.getString(MediaMetadata.METADATA_KEY_TITLE) ?: "",
+                                AlbumView(it.metadata?.getString(MediaMetadata.METADATA_KEY_TITLE) ?: "",
                                     it.metadata?.getString(MediaMetadata.METADATA_KEY_ARTIST) ?: "",
-                                    it.metadata?.getString(MediaMetadata.METADATA_KEY_ALBUM_ART_URI)
-                                ) {
-                                    Log.i("MainActivity", "Album clicked")
-                                    //backstack.push(screenState.value)
+                                    it.metadata?.getString(MediaMetadata.METADATA_KEY_ALBUM_ART_URI)) {
+                                    Log.i("MainActivity", "Album clicked") //backstack.push(screenState.value)
                                     //screenState.postValue(Screen.ArtistScreen(it.metadata?.getString(MediaMetadata.METADATA_KEY_TITLE)!!, MutableLiveData(null)))
                                     //browser.subscribe(it.metadata?.getString(MediaMetadata.METADATA_KEY_MEDIA_ID)!!, params)
                                 }
@@ -407,24 +320,18 @@ class MainActivity : ComponentActivity() {
                 }
 
                 parentId.startsWith("/artists") -> {
-                    val children = browser.getChildren(parentId, 0, Int.MAX_VALUE, params)
-                        .get().mediaItems?.map {
-                            Pair(
-                                it.metadata?.getString(MediaMetadata.METADATA_KEY_MEDIA_ID)!!,
-                                Song(
-                                    it.metadata?.getString(MediaMetadata.METADATA_KEY_TITLE)!!,
-                                    it.metadata?.extras?.getString(MusicService.METADATA_EXTRA_ARTIST_ID)!!,
-                                    it.metadata?.getString(MediaMetadata.METADATA_KEY_ARTIST)!!,
-                                    it.metadata?.extras?.getString(MusicService.METADATA_EXTRA_ALBUM_ID)!!,
-                                    it.metadata?.getString(MediaMetadata.METADATA_KEY_ALBUM)!!,
-                                    it.metadata?.getString(MediaMetadata.METADATA_KEY_ALBUM_ART_URI)
-                                )
-                            )
-                        }
+                    val children = browser.getChildren(parentId, 0, Int.MAX_VALUE, params).get().mediaItems?.map {
+                        Pair(it.metadata?.getString(MediaMetadata.METADATA_KEY_MEDIA_ID)!!,
+                            Song(it.metadata?.getString(MediaMetadata.METADATA_KEY_TITLE)!!,
+                                it.metadata?.extras?.getString(MusicService.METADATA_EXTRA_ARTIST_ID)!!,
+                                it.metadata?.getString(MediaMetadata.METADATA_KEY_ARTIST)!!,
+                                it.metadata?.extras?.getString(MusicService.METADATA_EXTRA_ALBUM_ID)!!,
+                                it.metadata?.getString(MediaMetadata.METADATA_KEY_ALBUM)!!,
+                                it.metadata?.getString(MediaMetadata.METADATA_KEY_ALBUM_ART_URI)))
+                    }
 
                     val screen = screenState.value
-                    if (screen is Screen.ArtistScreen)
-                        (screen.songs as MutableLiveData).postValue(children)
+                    if (screen is Screen.ArtistScreen) (screen.songs as MutableLiveData).postValue(children)
                 }
             }
         }
@@ -435,8 +342,7 @@ class MainActivity : ComponentActivity() {
 @ExperimentalMaterialApi
 @ExperimentalPagerApi
 @Composable
-fun Main(
-    connectionState: LiveData<ConnectionState>,
+fun Main(connectionState: LiveData<ConnectionState>,
     onBackPressed: () -> Unit,
     screen: LiveData<Screen>,
     playerState: PlayerState,
@@ -444,8 +350,7 @@ fun Main(
     onPlayPause: () -> Unit,
     onPrev: () -> Unit,
     onNext: () -> Unit,
-    onSettings: () -> Unit
-) {
+    onSettings: () -> Unit) {
     Scaffold(topBar = {
         TopAppBar(title = {
             Text("MMPD")
@@ -476,8 +381,7 @@ fun Main(
             Text("MPD CONNECTION FAILED")
         } else {
             val playingState by playerState.state.observeAsState()
-            val playerVisible =
-                playingState == SessionPlayer.PLAYER_STATE_PAUSED || playingState == SessionPlayer.PLAYER_STATE_PLAYING
+            val playerVisible = playingState == SessionPlayer.PLAYER_STATE_PAUSED || playingState == SessionPlayer.PLAYER_STATE_PLAYING
 
             val scope = rememberCoroutineScope()
             val pagerState = rememberPagerState()
@@ -485,36 +389,24 @@ fun Main(
 
             BoxWithConstraints(Modifier.fillMaxSize()) {
                 val screen by screen.observeAsState()
-                if (screen !is Screen.MainScreen)
-                    BackHandler(true, onBackPressed)
+                if (screen !is Screen.MainScreen) BackHandler(true, onBackPressed)
 
                 val mainHeight = with(LocalDensity.current) { (maxHeight - 72.dp).toPx() }
                 val transition = updateTransition(playerVisible, label = "")
                 val mainViewHeight = transition.animateDp({ tween() }, label = "") {
-                    if (it)
-                        maxHeight - 72.dp
-                    else
-                        maxHeight
+                    if (it) maxHeight - 72.dp
+                    else maxHeight
                 }
 
                 val swipeOffsetDp = with(LocalDensity.current) { swipeState.offset.value.toDp() }
 
-                BoxWithConstraints(
-                    Modifier
-                        .fillMaxWidth()
-                        .height(mainViewHeight.value + swipeOffsetDp)
-                ) {
+                BoxWithConstraints(Modifier.fillMaxWidth().height(mainViewHeight.value + swipeOffsetDp)) {
                     when (screen) {
                         is Screen.MainScreen -> Column {
                             val categories by (screen as Screen.MainScreen).categories.observeAsState()
                             if (categories != null) {
                                 TabRow(selectedTabIndex = pagerState.currentPage, indicator = {
-                                    TabRowDefaults.Indicator(
-                                        Modifier.pagerTabIndicatorOffset(
-                                            pagerState,
-                                            it
-                                        )
-                                    )
+                                    TabRowDefaults.Indicator(Modifier.pagerTabIndicatorOffset(pagerState, it))
                                 }) {
                                     categories!!.toList().forEachIndexed { i, pair ->
                                         Tab(selected = i == pagerState.currentPage, onClick = {
@@ -525,10 +417,7 @@ fun Main(
                                     }
                                 }
 
-                                HorizontalPager(
-                                    count = categories!!.size,
-                                    state = pagerState
-                                ) { page ->
+                                HorizontalPager(count = categories!!.size, state = pagerState) { page ->
                                     val list by categories!!.toList()[page].second.second.observeAsState()
                                     if (list != null) {
                                         LazyColumn(Modifier.fillMaxSize()) {
@@ -550,22 +439,16 @@ fun Main(
                             if (songs != null) {
                                 LazyColumn(Modifier.fillMaxSize()) {
                                     items(songs!!.size) {
-                                        ConstraintLayout(
-                                            Modifier
-                                                .fillMaxWidth()
-                                                .height(72.dp)
-                                                .clickable {
-                                                    setPlaylist(songs!!.map { it.first }, it)
-                                                }) {
+                                        ConstraintLayout(Modifier.fillMaxWidth().height(72.dp).clickable {
+                                            setPlaylist(songs!!.map { it.first }, it)
+                                        }) {
                                             val (titleConstraint) = createRefs()
 
-                                            Text(
-                                                songs!![it].second.title,
-                                                Modifier.constrainAs(titleConstraint) {
-                                                    top.linkTo(parent.top)
-                                                    bottom.linkTo(parent.bottom)
-                                                    start.linkTo(parent.start, 16.dp)
-                                                })
+                                            Text(songs!![it].second.title, Modifier.constrainAs(titleConstraint) {
+                                                top.linkTo(parent.top)
+                                                bottom.linkTo(parent.bottom)
+                                                start.linkTo(parent.start, 16.dp)
+                                            })
                                         }
                                     }
                                 }
@@ -578,12 +461,10 @@ fun Main(
 
                 val justOffScreen = with(LocalDensity.current) { 72.dp.toPx() }.roundToInt()
 
-                transition.AnimatedVisibility(
-                    { it },
+                transition.AnimatedVisibility({ it },
                     enter = slideInVertically(tween()) { justOffScreen },
                     exit = slideOutVertically(tween()) { justOffScreen },
-                    modifier = Modifier.matchParentSize()
-                ) {
+                    modifier = Modifier.matchParentSize()) {
                     val playlist by playerState.playlist.observeAsState()
                     val current by playerState.current.observeAsState()
                     PlayerSheet(playerVisible,
@@ -594,9 +475,7 @@ fun Main(
                         onPrev,
                         onPlayPause,
                         onNext,
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .offset { IntOffset(0, mainHeight.roundToInt()) })
+                        modifier = Modifier.fillMaxSize().offset { IntOffset(0, mainHeight.roundToInt()) })
                 }
             }
         }
@@ -605,33 +484,20 @@ fun Main(
 
 @Composable
 fun ArtistView(name: String, onClick: () -> Unit) {
-    ConstraintLayout(
-        Modifier
-            .clickable(onClick = onClick)
-            .height(48.dp)
-            .fillMaxWidth()
-    ) {
+    ConstraintLayout(Modifier.clickable(onClick = onClick).height(48.dp).fillMaxWidth()) {
         val (constraint) = createRefs()
 
-        Text(
-            name, Modifier.constrainAs(constraint) {
-                top.linkTo(parent.top)
-                bottom.linkTo(parent.bottom)
-                start.linkTo(parent.start, 16.dp)
-            },
-            style = MaterialTheme.typography.subtitle1
-        )
+        Text(name, Modifier.constrainAs(constraint) {
+            top.linkTo(parent.top)
+            bottom.linkTo(parent.bottom)
+            start.linkTo(parent.start, 16.dp)
+        }, style = MaterialTheme.typography.subtitle1)
     }
 }
 
 @Composable
 fun AlbumView(title: String, artist: String, art: String?, onClick: () -> Unit) {
-    ConstraintLayout(
-        Modifier
-            .clickable(onClick = onClick)
-            .height(64.dp)
-            .fillMaxWidth()
-    ) {
+    ConstraintLayout(Modifier.clickable(onClick = onClick).height(64.dp).fillMaxWidth()) {
         val (artConstraint, titleConstraint, artistConstraint) = createRefs()
 
         GlideImage(art, Modifier.constrainAs(artConstraint) {
@@ -645,57 +511,32 @@ fun AlbumView(title: String, artist: String, art: String?, onClick: () -> Unit) 
             RequestOptions().diskCacheStrategy(DiskCacheStrategy.RESOURCE)
         }, contentScale = ContentScale.Crop)
 
-        Text(
-            title,
-            Modifier
-                .paddingFromBaseline(28.dp)
-                .constrainAs(titleConstraint) {
-                    top.linkTo(parent.top)
-                    start.linkTo(artConstraint.end, 16.dp)
-                    end.linkTo(parent.end, 16.dp)
+        Text(title, Modifier.paddingFromBaseline(28.dp).constrainAs(titleConstraint) {
+            top.linkTo(parent.top)
+            start.linkTo(artConstraint.end, 16.dp)
+            end.linkTo(parent.end, 16.dp)
 
-                    width = Dimension.fillToConstraints
-                },
-            style = MaterialTheme.typography.subtitle1
-        )
+            width = Dimension.fillToConstraints
+        }, style = MaterialTheme.typography.subtitle1)
 
-        Text(
-            artist,
-            Modifier
-                .paddingFromBaseline(48.dp)
-                .constrainAs(artistConstraint) {
-                    top.linkTo(parent.top)
-                    start.linkTo(artConstraint.end, 16.dp)
-                    end.linkTo(parent.end, 16.dp)
+        Text(artist, Modifier.paddingFromBaseline(48.dp).constrainAs(artistConstraint) {
+            top.linkTo(parent.top)
+            start.linkTo(artConstraint.end, 16.dp)
+            end.linkTo(parent.end, 16.dp)
 
-                    width = Dimension.fillToConstraints
-                },
-            style = MaterialTheme.typography.caption
-        )
+            width = Dimension.fillToConstraints
+        }, style = MaterialTheme.typography.caption)
     }
 }
 
 sealed interface Screen {
-    class MainScreen(val categories: LiveData<Map<String, Pair<String, MutableLiveData<List<@Composable () -> Unit>?>>>?>) :
-        Screen
+    class MainScreen(val categories: LiveData<Map<String, Pair<String, MutableLiveData<List<@Composable () -> Unit>?>>>?>) : Screen
 
-    class ArtistScreen(
-        val id: String,
-        val artistName: String,
-        val songs: LiveData<List<Pair<String, Song>>?>
-    ) :
-        Screen
+    class ArtistScreen(val id: String, val artistName: String, val songs: LiveData<List<Pair<String, Song>>?>) : Screen
 }
 
-data class PlayerState(
-    val state: LiveData<Int>,
-    val playlist: LiveData<List<Pair<String, Song>>>,
-    val current: LiveData<Pair<Int, Bitmap?>>
-)
+data class PlayerState(val state: LiveData<Int>, val playlist: LiveData<List<Pair<String, Song>>>, val current: LiveData<Pair<Int, Bitmap?>>)
 
 enum class ConnectionState {
-    CONNECTING,
-    CONNECTED,
-    ERROR
+    CONNECTING, CONNECTED, ERROR
 }
-
