@@ -162,8 +162,10 @@ class MusicService : MediaLibraryService() {
 
         override fun onDisconnected(session: MediaSession, controller: MediaSession.ControllerInfo) {
             clients.remove(controller)
-            if (clients.isEmpty())
+            if (clients.isEmpty()) {
                 timeoutInhibitor.close()
+                connected = false
+            }
         }
 
         private val metadataBuilder = MediaMetadata.Builder().putLong(MediaMetadata.METADATA_KEY_PLAYABLE, 0)
