@@ -539,7 +539,7 @@ class MpdTimeoutInhibitor(private val channel: SocketChannel) : Closeable {
         var idle = true
         var shouldDrain = false
         requestPipe.source().configureBlocking(false)
-        requestPipe.source().register(selector, SelectionKey.OP_READ)
+        val pipeKey = requestPipe.source().register(selector, SelectionKey.OP_READ)
 
         var resultCount = 0
         var result: ByteBuffer = ByteBuffer.allocate(0)
@@ -558,26 +558,19 @@ class MpdTimeoutInhibitor(private val channel: SocketChannel) : Closeable {
         while (true) {
             val keySize = selector.select()
             val keys = selector.selectedKeys()
-            if (keySize == 2) {
-                // Since send() is a blocking method, there are two circumstances in which both the pipe and the socket are ready:
-                // 1. A command was requested from the pipe and the MPD server responded to our "idle" at the same time
-                // 2. A command was requested from the pipe and we are in the middle of issuing an "idle" command as a result of a previous "idle" return
+            if (keySize == 2) { // 1. A command was requested from the pipe and the MPD server responded to our "idle" at the same time - in this case, none of the keys are writeable
+                // 2. A command was requested from the pipe and we are in the middle of issuing an "idle" command - in this case, one key is writeable
 
-                if (keys.all { !it.isWritable }) {
-                    val reader = channel.socket().getInputStream().bufferedReader()
-                    // Service the MPD server first
+                if (keys.none { it.isWritable }) { // Deregister the pipe while we drain the socket
+                    requestPipe.source().keyFor(selector).interestOps(0)
+                    assert(idle)
+                } else { // Don't issue the idle command and instead issue the requested command
+                    val sizeBuffer = ByteBuffer.allocate(4)
+                    requestPipe.source().read(sizeBuffer)
+                    sizeBuffer.rewind()
+                    commandLength = sizeBuffer.int
+                    if (commandLength == 0) break
 
-                    var line = reader.readLine()
-                    while (!(line == "OK" || line.startsWith("ACK")))
-                        line = reader.readLine()
-
-                    request = ByteBuffer.allocate(commandLength)
-                    requestPipe.source().read(request)
-                    idle = false
-                    shouldDrain = false
-                    socketKey.interestOps(SelectionKey.OP_WRITE)
-                } else {
-                    // Don't issue the idle command and instead issue the requested command
                     request = ByteBuffer.allocate(commandLength)
                     requestPipe.source().read(request)
                     request.rewind()
@@ -587,89 +580,57 @@ class MpdTimeoutInhibitor(private val channel: SocketChannel) : Closeable {
                     shouldDrain = false
                     socketKey.interestOps(SelectionKey.OP_READ)
                 }
-
             } else {
                 val key = keys.first()
                 if (key == socketKey) {
                     if (key.isWritable) {
                         if (idle) {
-                            channel.write(
-                                ByteBuffer.allocate(5).put("idle\n".toByteArray())
-                                    .rewind() as ByteBuffer
-                            )
+                            channel.write(ByteBuffer.allocate(5).put("idle\n".toByteArray()).rewind() as ByteBuffer)
                         } else {
-                            if (shouldDrain)
-                                channel.write(
-                                    ByteBuffer.allocate(7).put("noidle\n".toByteArray())
-                                        .rewind() as ByteBuffer
-                                )
-                            else
-                                channel.write(request)
+                            if (shouldDrain) channel.write(ByteBuffer.allocate(7).put("noidle\n".toByteArray()).rewind() as ByteBuffer)
+                            else channel.write(request)
                         }
 
                         key.interestOps(SelectionKey.OP_READ)
                     } else {
-                        if (idle) {
-                            val buffer = ByteBuffer.allocate(8192) // Hopefully that's enough
-                            channel.read(buffer)
+                        resultCount++ // 1448 is for debugging purposes
+                        val newResult = ByteBuffer.allocate(1448 * resultCount)
+                        newResult.put(result)
+                        channel.read(newResult)
+                        result = newResult
 
-                            // TODO: Collect the entire command until an OK or an ACK is reached
+                        if (result[result.position() - 1] != '\n'.code.toByte()) { // If the last character is not a '\n' then surely we didn't read the whole command
+                            result.rewind()
+                        } else { // Otherwise, check if the last line is an "OK" or an "ACK"; if it's not, wait for more data to arrive
+                            var start = result.position() - 1
+                            while (start != 0 && result[start - 1] != '\n'.code.toByte()) start--
 
-                            key.interestOps(SelectionKey.OP_WRITE)
-                        } else {
-                            if (shouldDrain) {
-                                val buffer = ByteBuffer.allocate(8192) // Hopefully that's enough
-                                channel.read(buffer)
-                                buffer.rewind()
+                            val end = result.position() - 1
+                            val line = ByteArray(end - start) { 0 }
+                            result.position(start)
+                            result.get(line, 0, end - start)
+                            result.position(end + 1)
 
-                                // TODO: Collect the entire command until an OK or an ACK is reached
-
-                                val reader = BufferedReader(
-                                    StringReader(
-                                        StandardCharsets.UTF_8.decode(buffer).toString()
-                                    )
-                                )
-                                var line = reader.readLine()
-                                while (!(line == "OK" || line.startsWith("ACK")))
-                                    line = reader.readLine()
-
-                                shouldDrain = false
-                                key.interestOps(SelectionKey.OP_WRITE)
-                            } else {
-                                resultCount++
-                                // 1448 is for debugging purposes
-                                val newResult = ByteBuffer.allocate(1448 * resultCount)
-                                newResult.put(result)
-                                channel.read(newResult)
-                                result = newResult
-
-                                if (result[result.position() - 1] != '\n'.code.toByte()) {
-                                    // If the last character is not a '\n' then surely we didn't read the whole command
-                                    result.rewind()
+                            val lineString = line.toString(Charsets.UTF_8)
+                            if (lineString == "OK" || lineString.startsWith("ACK")) {
+                                if (idle) { // If we disabled pipe read, then enable it here
+                                    pipeKey.interestOps(SelectionKey.OP_READ)
                                 } else {
-                                    // Otherwise, check if the last line is an "OK" or an "ACK"; if it's not, wait for more data to arrive
-                                    var start = result.position() - 1
-                                    while (start != 0 && result[start - 1] != '\n'.code.toByte())
-                                        start--
-
-                                    val end = result.position() - 1
-                                    val line = ByteArray(end - start) { 0 }
-                                    result.position(start)
-                                    result.get(line, 0, end - start)
-                                    result.position(end + 1)
-
-                                    val lineString = line.toString(Charsets.UTF_8)
-                                    if (lineString == "OK" || lineString.startsWith("ACK")) {
-                                        resultCount = 0
+                                    if (!shouldDrain) {
                                         result.rewind()
                                         resultQueue.put(result)
-
                                         idle = true
-                                        key.interestOps(SelectionKey.OP_WRITE)
                                     } else {
-                                        result.rewind()
+                                        shouldDrain = false
                                     }
+
+                                    result = ByteBuffer.allocate(0)
+                                    resultCount = 0
+
+                                    key.interestOps(SelectionKey.OP_WRITE)
                                 }
+                            } else {
+                                result.rewind()
                             }
                         }
                     }
@@ -678,8 +639,7 @@ class MpdTimeoutInhibitor(private val channel: SocketChannel) : Closeable {
                     requestPipe.source().read(sizeBuffer)
                     sizeBuffer.rewind()
                     commandLength = sizeBuffer.int
-                    if (commandLength == 0)
-                        break
+                    if (commandLength == 0) break
 
                     request = ByteBuffer.allocate(commandLength)
                     requestPipe.source().read(request)
@@ -701,7 +661,8 @@ class MpdTimeoutInhibitor(private val channel: SocketChannel) : Closeable {
 
     // NOTE: send() IS NOT THREAD SAFE
     fun send(command: String): ByteBuffer {
-        requestPipe.sink().write(ByteBuffer.allocate(4 + command.toByteArray().size).putInt(command.toByteArray().size).put(command.toByteArray()).rewind() as ByteBuffer)
+        requestPipe.sink()
+            .write(ByteBuffer.allocate(4 + command.toByteArray().size).putInt(command.toByteArray().size).put(command.toByteArray()).rewind() as ByteBuffer)
         return resultQueue.take()
     }
 
