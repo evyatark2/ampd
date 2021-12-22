@@ -1,0 +1,19 @@
+<resources>
+    <string name="app_name">AMPD</string>
+    <string name="title_activity_settings">SettingsActivity</string>
+
+    <!-- Preference Titles -->
+    <string name="mpd_header">MPD</string>
+    <string name="music_library_header">Music library</string>
+
+    <!-- MPD Preferences -->
+    <string name="mpd_host_title">Host</string>
+    <string name="mpd_port_title">Port</string>
+    <string name="mpd_password_title">Password</string>
+
+    <!-- Music library Preferences -->
+    <string name="library_host_title">Host</string>
+    <string name="library_user_title">Username</string>
+    <string name="library_password_title">Password</string>
+    <string name="library_port_title">Port</string>
+</resources>

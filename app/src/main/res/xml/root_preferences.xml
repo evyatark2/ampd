@@ -1,0 +1,45 @@
+<PreferenceScreen xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto">
+    <PreferenceCategory android:title="@string/mpd_header">
+
+        <EditTextPreference
+            android:defaultValue="Default value"
+            android:key="mpd_host_preference"
+            android:selectAllOnFocus="true"
+            android:singleLine="true"
+            android:title="@string/mpd_host_title" />
+        <EditTextPreference
+            android:defaultValue="Default value"
+            android:key="mpd_port_preference"
+            android:selectAllOnFocus="true"
+            android:singleLine="true"
+            android:title="@string/mpd_port_title" />
+    </PreferenceCategory>
+    <PreferenceCategory android:title="@string/music_library_header">
+
+        <EditTextPreference
+            android:defaultValue="false"
+            android:key="media_library_host_preference"
+            android:selectAllOnFocus="true"
+            android:singleLine="true"
+            android:title="@string/library_host_title" />
+        <EditTextPreference
+            android:defaultValue="Default value"
+            android:key="library_port_preference"
+            android:selectAllOnFocus="true"
+            android:singleLine="true"
+            android:title="@string/library_port_title" />
+        <EditTextPreference
+            android:defaultValue="Default value"
+            android:key="library_user_preference"
+            android:selectAllOnFocus="true"
+            android:singleLine="true"
+            android:title="@string/library_user_title" />
+        <EditTextPreference
+            android:defaultValue="Default value"
+            android:key="library_password_preference"
+            android:selectAllOnFocus="true"
+            android:singleLine="true"
+            android:title="@string/library_password_title" />
+    </PreferenceCategory>
+</PreferenceScreen>
