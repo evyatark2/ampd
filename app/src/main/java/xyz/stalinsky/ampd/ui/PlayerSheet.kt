@@ -158,7 +158,7 @@ fun ExpandedPlayer(title: String, artist: String, art: Bitmap?, alpha: Float, pl
                 .fillMaxWidth()
                 .height(372.dp)
                 .alpha(alpha)) {
-            val (imageConstraint, playlistButtonConstraint, backConstraint, playConstraint, forwardConstraint) = createRefs()
+            val (imageConstraint, titleConstraint, artistConstraint, playlistButtonConstraint, backConstraint, playConstraint, forwardConstraint) = createRefs()
 
             Image(BitmapPainter(art?.asImageBitmap() ?: ImageBitmap.imageResource(R.drawable.ic_launcher_foreground)), "", Modifier.constrainAs(imageConstraint) {
                 start.linkTo(parent.start)
@@ -170,6 +170,20 @@ fun ExpandedPlayer(title: String, artist: String, art: Bitmap?, alpha: Float, pl
                 height = Dimension.fillToConstraints
             },
             contentScale = ContentScale.Crop)
+
+            Text(title, Modifier.constrainAs(titleConstraint) {
+                bottom.linkTo(artistConstraint.top, 16.dp)
+                start.linkTo(parent.start)
+                end.linkTo(parent.end)
+            },
+            style = MaterialTheme.typography.h6)
+
+            Text(artist, Modifier.constrainAs(artistConstraint) {
+                bottom.linkTo(playConstraint.top, 16.dp)
+                start.linkTo(parent.start)
+                end.linkTo(parent.end)
+            },
+            style = MaterialTheme.typography.subtitle1)
 
             IconButton(onClick = { /*TODO*/ }, Modifier.constrainAs(playlistButtonConstraint) {
                 top.linkTo(parent.top, 24.dp)
