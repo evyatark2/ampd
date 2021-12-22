@@ -9,6 +9,7 @@ import android.net.Uri
 import android.os.Bundle
 import android.util.Log
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.compose.animation.*
 import androidx.compose.animation.core.*
@@ -57,10 +58,11 @@ class MainActivity : ComponentActivity() {
     private val executor = Executors.newSingleThreadExecutor()
     //private val executor = { it: Runnable -> queue.put(Optional.of(it)) }
 
-    private var playingState: MutableLiveData<Int> =
+    private val playingState: MutableLiveData<Int> =
         MutableLiveData(SessionPlayer.PLAYER_STATE_IDLE)
-    private var playlistState: MutableLiveData<List<Pair<String, Song>>> = MutableLiveData(listOf())
-    private var currentItemState: MutableLiveData<Pair<Int, Bitmap?>> =
+    @ExperimentalMaterialApi
+    private val playlistState: MutableLiveData<List<Pair<String, Song>>> = MutableLiveData(listOf())
+    private val currentItemState: MutableLiveData<Pair<Int, Bitmap?>> =
         MutableLiveData(Pair(-1, null))
 
     // This is a map that represents the main view window
@@ -73,7 +75,7 @@ class MainActivity : ComponentActivity() {
 
     private lateinit var controller: MediaBrowser
 
-    private var connectionState = MutableLiveData(ConnectionState.CONNECTING)
+    private val connectionState = MutableLiveData(ConnectionState.CONNECTING)
 
     private val backstack = java.util.Stack<Screen>()
     private val screenState: MutableLiveData<Screen> =
@@ -161,6 +163,13 @@ class MainActivity : ComponentActivity() {
                 Surface(color = MaterialTheme.colors.background) {
                     Main(
                         connectionState,
+                        {
+                            val screen = screenState.value
+                            if (screen is Screen.ArtistScreen)
+                                controller.unsubscribe(screen.id)
+
+                            screenState.postValue(backstack.pop())
+                        },
                         screenState,
                         PlayerState(playingState, playlistState, currentItemState),
                         { playlist, index ->
@@ -200,19 +209,8 @@ class MainActivity : ComponentActivity() {
             .unregisterOnSharedPreferenceChangeListener(listener)
     }
 
-    override fun onBackPressed() {
-        if (backstack.empty())
-            super.onBackPressed()
-        else {
-            val screen = screenState.value
-            if (screen is Screen.ArtistScreen) {
-                controller.unsubscribe(screen.id)
-            }
-            screenState.postValue(backstack.pop())
-        }
-    }
-
     inner class Callback : MediaBrowser.BrowserCallback() {
+        @OptIn(ExperimentalMaterialApi::class)
         override fun onConnected(
             controller: MediaController,
             allowedCommands: SessionCommandGroup
@@ -304,6 +302,7 @@ class MainActivity : ComponentActivity() {
             return SessionResult(SessionResult.RESULT_SUCCESS, null)
         }
 
+        @OptIn(ExperimentalMaterialApi::class)
         override fun onPlaylistChanged(
             controller: MediaController,
             list: MutableList<MediaItem>?,
@@ -438,6 +437,7 @@ class MainActivity : ComponentActivity() {
 @Composable
 fun Main(
     connectionState: LiveData<ConnectionState>,
+    onBackPressed: () -> Unit,
     screen: LiveData<Screen>,
     playerState: PlayerState,
     setPlaylist: (List<String>, Int) -> Unit,
@@ -482,11 +482,14 @@ fun Main(
             val scope = rememberCoroutineScope()
             val pagerState = rememberPagerState()
             val swipeState = rememberSwipeableState(false)
+
             BoxWithConstraints(Modifier.fillMaxSize()) {
                 val screen by screen.observeAsState()
+                if (screen !is Screen.MainScreen)
+                    BackHandler(true, onBackPressed)
+
                 val mainHeight = with(LocalDensity.current) { (maxHeight - 72.dp).toPx() }
                 val transition = updateTransition(playerVisible, label = "")
-
                 val mainViewHeight = transition.animateDp({ tween() }, label = "") {
                     if (it)
                         maxHeight - 72.dp

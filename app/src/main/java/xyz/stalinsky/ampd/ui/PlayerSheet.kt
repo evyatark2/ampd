@@ -1,6 +1,7 @@
 package xyz.stalinsky.ampd.ui
 
 import android.graphics.Bitmap
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -68,6 +69,12 @@ fun PlayerSheet(enabled: Boolean, state: Int, playlist: List<Pair<String, Song>>
                     }
                 }
                 swipeState.currentValue -> {
+                    BackHandler {
+                        scope.launch {
+                            swipeState.animateTo(false)
+                        }
+                    }
+
                     if (currentItem.first != -1) {
                         ExpandedPlayer(playlist[currentItem.first].second.title, playlist[currentItem.first].second.artist, currentItem.second, 1f, state, onPrev, onPlayPause, onNext)
                     } else {
@@ -165,8 +172,8 @@ fun ExpandedPlayer(title: String, artist: String, art: Bitmap?, alpha: Float, pl
             contentScale = ContentScale.Crop)
 
             IconButton(onClick = { /*TODO*/ }, Modifier.constrainAs(playlistButtonConstraint) {
-                end.linkTo(parent.end, 16.dp)
                 top.linkTo(parent.top, 24.dp)
+                end.linkTo(parent.end, 16.dp)
                 width = Dimension.value(24.dp)
                 height = Dimension.value(24.dp)
             }) {
