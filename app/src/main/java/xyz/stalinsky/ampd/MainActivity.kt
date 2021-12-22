@@ -55,7 +55,7 @@ import java.util.concurrent.Executors
 import kotlin.math.roundToInt
 
 class MainActivity : ComponentActivity() {
-    private val executor = Executors.newSingleThreadExecutor() //private val executor = { it: Runnable -> queue.put(Optional.of(it)) }
+    private val executor = Executors.newSingleThreadExecutor()
 
     private val playingState: MutableLiveData<Int> = MutableLiveData(SessionPlayer.PLAYER_STATE_IDLE)
 
@@ -67,7 +67,7 @@ class MainActivity : ComponentActivity() {
     // The key is the mediaId of a root mediaItem e.g. "/artists"
     // The value is a pair where first is the name of the category e.g. "Artists"
     // and second is a list of composeables used to render the list e.g.
-    // listOf(ArtistView(), ArtistView())
+    // listOf(ArtistView("Beethoven"), ArtistView("The Beatles"))
     private var categories: MutableLiveData<Map<String, Pair<String, MutableLiveData<List<@Composable () -> Unit>?>>>?> = MutableLiveData(null)
 
     private lateinit var controller: MediaBrowser
@@ -139,7 +139,7 @@ class MainActivity : ComponentActivity() {
             .build()
 
         setContent {
-            AMPDTheme { // A surface container using the 'background' color from the theme
+            AMPDTheme {
                 Surface(color = MaterialTheme.colors.background) {
                     Main(connectionState,
                         {
@@ -150,7 +150,7 @@ class MainActivity : ComponentActivity() {
                         },
                         screenState,
                         PlayerState(playingState, playlistState, currentItemState),
-                        { playlist, index -> // Start playing the tapped item immediately and then add the rest of the playlist
+                        { playlist, index ->
                             controller.setPlaylist(playlist, null).addListener({
                                 controller.skipToPlaylistItem(index).addListener({
                                     if (controller.playerState == SessionPlayer.PLAYER_STATE_IDLE) controller.prepare().addListener({
@@ -283,7 +283,8 @@ class MainActivity : ComponentActivity() {
 
                 parentId == "/artists" -> {
                     val children = browser.getChildren("/artists", 0, Int.MAX_VALUE, params)
-                        .get().mediaItems?.map { // Couldn't find how to return a @Composable expression directly
+                        .get().mediaItems?.map {
+                            // Couldn't find how to return a @Composable expression directly
                             val composable: @Composable () -> Unit = {
                                 ArtistView(it.metadata?.getString(MediaMetadata.METADATA_KEY_TITLE) ?: "") {
                                     backstack.push(screenState.value)
@@ -302,12 +303,14 @@ class MainActivity : ComponentActivity() {
 
                 parentId == "/albums" -> {
                     val children = browser.getChildren("/albums", 0, Int.MAX_VALUE, params)
-                        .get().mediaItems?.map { // Couldn't find how to return a @Composable expression directly
+                        .get().mediaItems?.map {
+                            // Couldn't find how to return a @Composable expression directly
                             val composable: @Composable () -> Unit = {
                                 AlbumView(it.metadata?.getString(MediaMetadata.METADATA_KEY_TITLE) ?: "",
                                     it.metadata?.getString(MediaMetadata.METADATA_KEY_ARTIST) ?: "",
                                     it.metadata?.getString(MediaMetadata.METADATA_KEY_ALBUM_ART_URI)) {
-                                    Log.i("MainActivity", "Album clicked") //backstack.push(screenState.value)
+                                    Log.i("MainActivity", "Album clicked")
+                                    //backstack.push(screenState.value)
                                     //screenState.postValue(Screen.ArtistScreen(it.metadata?.getString(MediaMetadata.METADATA_KEY_TITLE)!!, MutableLiveData(null)))
                                     //browser.subscribe(it.metadata?.getString(MediaMetadata.METADATA_KEY_MEDIA_ID)!!, params)
                                 }

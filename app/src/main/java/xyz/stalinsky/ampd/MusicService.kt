@@ -264,7 +264,9 @@ class MusicService : MediaLibraryService() {
                                 .setMetadata(metadataBuilder.putString(MediaMetadata.METADATA_KEY_MEDIA_ID, "/artists/$artistId")
                                     .putString(MediaMetadata.METADATA_KEY_TITLE, name)
                                     .build())
-                                .build()) // Some artists have multiple names but have the same MusicBrainz ID
+                                .build())
+
+                            // Some artists have multiple names but have the same MusicBrainz ID
                             // We use the first name that is returned by MPD
                             artistId = reader.readLine()
 
@@ -305,7 +307,8 @@ class MusicService : MediaLibraryService() {
                                         putString(METADATA_EXTRA_ARTIST_ID, "/artists/noid/$artistName")
                                     })
 
-                                    if (albumId.isEmpty()) { // ARTISTID is empty && ALUBMID is empty
+                                    if (albumId.isEmpty()) {
+                                        // ARTISTID is empty && ALUBMID is empty
                                         line = reader.readLine()
                                         val albumTitle = line.drop("Album: ".length)
 
@@ -314,9 +317,10 @@ class MusicService : MediaLibraryService() {
                                         }\\\") AND (album == \\\"${albumTitle.replace("\"", "\\\\\\\"")}\\\"))\" window 0:1")
 
                                         metadataBuilder.putString(MediaMetadata.METADATA_KEY_MEDIA_ID, "/albums/noid/noid/$artistName/$albumTitle")
-                                            .putString(MediaMetadata.METADATA_KEY_TITLE, albumTitle) // The artistId is also their name
+                                            .putString(MediaMetadata.METADATA_KEY_TITLE, albumTitle)
                                             .putString(MediaMetadata.METADATA_KEY_ARTIST, artistName)
-                                    } else { // ARTISTID is empty && ALUBMID isn't empty
+                                    } else {
+                                        // ARTISTID is empty && ALUBMID isn't empty
                                         line = reader.readLine()
                                         val albumTitle = line.drop("Album: ".length)
 
@@ -326,7 +330,7 @@ class MusicService : MediaLibraryService() {
 
                                         metadataBuilder.putString(MediaMetadata.METADATA_KEY_MEDIA_ID,
                                             "/albums/$albumId") // TODO: Check if MusicBrainz ALBUMID is unique per artist or unique in general
-                                            .putString(MediaMetadata.METADATA_KEY_TITLE, albumTitle) // The artistId is also their name
+                                            .putString(MediaMetadata.METADATA_KEY_TITLE, albumTitle)
                                             .putString(MediaMetadata.METADATA_KEY_ARTIST, artistName)
                                     }
 
@@ -336,7 +340,8 @@ class MusicService : MediaLibraryService() {
                                 }
                             }
                         } else {
-                            line = reader.readLine() // The same artistID can have multiple names
+                            line = reader.readLine()
+                            // The same artistID can have multiple names
                             while (line.startsWith("Artist: ")) {
                                 val artistName = line.drop("Artist: ".length)
 
@@ -348,7 +353,8 @@ class MusicService : MediaLibraryService() {
                                         putString(METADATA_EXTRA_ARTIST_ID, "/artists/$artistId")
                                     })
 
-                                    if (albumId.isEmpty()) { // ARTISTID isn't empty && ALUBMID is empty
+                                    if (albumId.isEmpty()) {
+                                        // ARTISTID isn't empty && ALUBMID is empty
                                         line = reader.readLine()
                                         val albumTitle = line.drop("Album: ".length)
                                         sb.appendLine("find \"((MUSICBRAINZ_ARTISTID == \\\"$artistId\\\") AND (album == \\\"${
@@ -356,9 +362,10 @@ class MusicService : MediaLibraryService() {
                                         }\\\"))\" window 0:1")
 
                                         metadataBuilder.putString(MediaMetadata.METADATA_KEY_MEDIA_ID, "/albums/noid/$artistId/$albumTitle")
-                                            .putString(MediaMetadata.METADATA_KEY_TITLE, albumTitle) // The artistId is also their name
+                                            .putString(MediaMetadata.METADATA_KEY_TITLE, albumTitle)
                                             .putString(MediaMetadata.METADATA_KEY_ARTIST, artistName)
-                                    } else { // ARTISTID isn't empty && ALUBMID isn't empty
+                                    } else {
+                                        // ARTISTID isn't empty && ALUBMID isn't empty
                                         line = reader.readLine()
                                         val albumTitle = line.drop("Album: ".length)
 
@@ -366,7 +373,7 @@ class MusicService : MediaLibraryService() {
 
                                         metadataBuilder.putString(MediaMetadata.METADATA_KEY_MEDIA_ID,
                                             "/albums/$albumId") // TODO: Check if MusicBrainz ALBUMID is unique per artist or unique in general
-                                            .putString(MediaMetadata.METADATA_KEY_TITLE, albumTitle) // The artistId is also their name
+                                            .putString(MediaMetadata.METADATA_KEY_TITLE, albumTitle)
                                             .putString(MediaMetadata.METADATA_KEY_ARTIST, artistName)
                                     }
 
@@ -486,7 +493,6 @@ class MusicService : MediaLibraryService() {
     }
 
     companion object {
-        // When a client receives this command, the only valid command they can send to the server is controller.disconnect()
         val COMMAND_MPD_CONNECT = SessionCommand("xyz.stalinsky.ampd.MusicService.COMMAND_MPD_CONNECT", null)
         val COMMAND_SET_MEDIA_LIBRARY = SessionCommand("xyz.stalinsky.ampd.MusicService.COMMAND_SET_MEDIA_LIBRARY", null)
 
@@ -528,13 +534,16 @@ class MpdTimeoutInhibitor(private val channel: SocketChannel) : Closeable {
         while (true) {
             val keySize = selector.select()
             val keys = selector.selectedKeys()
-            if (keySize == 2) { // 1. A command was requested from the pipe and the MPD server responded to our "idle" at the same time - in this case, none of the keys are writeable
+            if (keySize == 2) {
+                // 1. A command was requested from the pipe and the MPD server responded to our "idle" at the same time - in this case, none of the keys are writeable
                 // 2. A command was requested from the pipe and we are in the middle of issuing an "idle" command - in this case, one key is writeable
 
-                if (keys.none { it.isWritable }) { // Deregister the pipe while we drain the socket
+                if (keys.none { it.isWritable }) {
+                    // Deregister the pipe while we drain the socket
                     requestPipe.source().keyFor(selector).interestOps(0)
                     assert(idle)
-                } else { // Don't issue the idle command and instead issue the requested command
+                } else {
+                    // Don't issue the idle command and instead issue the requested command
                     val sizeBuffer = ByteBuffer.allocate(4)
                     requestPipe.source().read(sizeBuffer)
                     sizeBuffer.rewind()
@@ -569,9 +578,11 @@ class MpdTimeoutInhibitor(private val channel: SocketChannel) : Closeable {
                         channel.read(newResult)
                         result = newResult
 
-                        if (result[result.position() - 1] != '\n'.code.toByte()) { // If the last character is not a '\n' then surely we didn't read the whole command
+                        if (result[result.position() - 1] != '\n'.code.toByte()) {
+                            // If the last character is not a '\n' then surely we didn't read the whole command
                             result.rewind()
-                        } else { // Otherwise, check if the last line is an "OK" or an "ACK"; if it's not, wait for more data to arrive
+                        } else {
+                            // Otherwise, check if the last line is an "OK" or an "ACK"; if it's not, wait for more data to arrive
                             var start = result.position() - 1
                             while (start != 0 && result[start - 1] != '\n'.code.toByte()) start--
 
