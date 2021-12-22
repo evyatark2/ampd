@@ -122,8 +122,8 @@ fun PlayerSheet(enabled: Boolean,
 fun RedactedPlayer(title: String, artist: String, alpha: Float, playerState: Int, color: Color?, onPlayPause: () -> Unit) {
     if (alpha > 0f) {
         val modifier = if (color != null) Modifier.background(color) else Modifier
-        Box(modifier) {
-            ConstraintLayout(Modifier.fillMaxWidth().height(372.dp).alpha(alpha)) {
+        Box(modifier.height(372.dp)) {
+            ConstraintLayout(Modifier.fillMaxWidth().height(72.dp).alpha(alpha)) {
                 val (titleConstraint, artistConstraint, buttonConstraint) = createRefs()
 
                 Text(title, Modifier.paddingFromBaseline(28.dp).constrainAs(titleConstraint) {
