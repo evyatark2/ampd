@@ -9,6 +9,7 @@ import androidx.compose.foundation.gestures.Orientation
 import androidx.compose.foundation.layout.*
 import androidx.compose.material.*
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.List
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.rememberCoroutineScope
@@ -47,20 +48,26 @@ fun PlayerSheet(enabled: Boolean,
     modifier: Modifier) {
     val scope = rememberCoroutineScope()
     val threeHundredDp = with(LocalDensity.current) { 300.dp.toPx() }
-    Surface(elevation = 4.dp,
-        modifier = modifier.offset { IntOffset(0, swipeState.offset.value.roundToInt()) }
+    Surface(modifier
             .swipeable(swipeState, mapOf(0f to false, -threeHundredDp to true), Orientation.Vertical, enabled)
             .clickable(enabled) {
                 scope.launch {
                     swipeState.animateTo(!swipeState.currentValue)
                 }
-            }) {
+            },
+        elevation = 4.dp) {
         Box(Modifier.fillMaxSize()) {
             val palette = currentItem.second?.let {
                 Palette.from(it).generate()
             }
             when {
                 swipeState.direction != 0f -> {
+                    BackHandler {
+                        scope.launch {
+                            swipeState.animateTo(false)
+                        }
+                    }
+
                     if (currentItem.first != -1) {
                         RedactedPlayer(playlist[currentItem.first].second.title,
                             playlist[currentItem.first].second.artist,
@@ -148,8 +155,10 @@ fun RedactedPlayer(title: String, artist: String, alpha: Float, playerState: Int
                     width = Dimension.value(24.dp)
                     height = Dimension.value(24.dp)
                 }) {
-                    if (playerState == SessionPlayer.PLAYER_STATE_PAUSED) Icon(ImageVector.vectorResource(R.drawable.baseline_play_arrow_black_24dp), "Play")
-                    else Icon(ImageVector.vectorResource(R.drawable.baseline_pause_black_24dp), "Pause")
+                    if(playerState == SessionPlayer.PLAYER_STATE_PAUSED)
+                        Icon(ImageVector.vectorResource(R.drawable.baseline_play_arrow_black_24dp), "Play")
+                    else
+                        Icon(ImageVector.vectorResource(R.drawable.baseline_pause_black_24dp), "Pause")
 
                 }
             }
@@ -225,8 +234,10 @@ fun ExpandedPlayer(title: String,
                 width = Dimension.value(24.dp)
                 height = Dimension.value(24.dp)
             }) {
-                if (playerState == SessionPlayer.PLAYER_STATE_PAUSED) Icon(ImageVector.vectorResource(R.drawable.baseline_play_arrow_black_24dp), "Play")
-                else Icon(ImageVector.vectorResource(R.drawable.baseline_pause_black_24dp), "Pause")
+                if (playerState == SessionPlayer.PLAYER_STATE_PAUSED)
+                    Icon(ImageVector.vectorResource(R.drawable.baseline_play_arrow_black_24dp), "Play")
+                else
+                    Icon(ImageVector.vectorResource(R.drawable.baseline_pause_black_24dp), "Pause")
             }
 
             IconButton(onClick = onNext, Modifier.constrainAs(forwardConstraint) {

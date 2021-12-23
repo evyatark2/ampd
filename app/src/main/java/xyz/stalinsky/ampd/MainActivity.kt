@@ -14,14 +14,19 @@ import androidx.activity.compose.setContent
 import androidx.compose.animation.*
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.gestures.scrollable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material.*
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
+import androidx.compose.ui.input.nestedscroll.NestedScrollSource
+import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
@@ -55,6 +60,7 @@ import xyz.stalinsky.ampd.ui.theme.AMPDTheme
 import java.util.*
 import java.util.concurrent.Executors
 import kotlin.math.max
+import kotlin.math.min
 import kotlin.math.roundToInt
 
 class MainActivity : ComponentActivity() {
@@ -148,6 +154,7 @@ class MainActivity : ComponentActivity() {
                     Main(connectionState, {
                         val screen = screenState.value
                         if (screen is Screen.ArtistScreen) controller.unsubscribe(screen.id)
+                        if (screen is Screen.AlbumScreen) controller.unsubscribe(screen.id)
 
                         screenState.value = backstack.pop()
                     }, screenState, PlayerState(playingState, playlistState, currentItemState), { playlist, index ->
@@ -302,11 +309,12 @@ class MainActivity : ComponentActivity() {
                     val children = browser.getChildren("/albums", 0, Int.MAX_VALUE, params).get().mediaItems?.map {
                         // Couldn't find how to return a @Composable expression directly
                         val composable: @Composable () -> Unit = {
-                            AlbumView(it.metadata?.getString(MediaMetadata.METADATA_KEY_TITLE) ?: "",
+                            AlbumView(Album(it.metadata?.getString(MediaMetadata.METADATA_KEY_TITLE) ?: "",
+                                it.metadata?.extras?.getString(MusicService.METADATA_EXTRA_ARTIST_ID)!!,
                                 it.metadata?.getString(MediaMetadata.METADATA_KEY_ARTIST) ?: "",
-                                it.metadata?.getString(MediaMetadata.METADATA_KEY_ALBUM_ART_URI)) {
+                                it.metadata?.getString(MediaMetadata.METADATA_KEY_ALBUM_ART_URI))) {
                                 backstack.push(screenState.value)
-                                screenState.value = Screen.AlbumScreen(it.metadata?.getString(MediaMetadata.METADATA_KEY_MEDIA_ID)!!, it.metadata?.getString(MediaMetadata.METADATA_KEY_TITLE)!!, MutableStateFlow(null))
+                                screenState.value = Screen.AlbumScreen(it.metadata?.getString(MediaMetadata.METADATA_KEY_MEDIA_ID)!!, it.metadata?.getString(MediaMetadata.METADATA_KEY_TITLE)!!, it.metadata?.getString(MediaMetadata.METADATA_KEY_ALBUM_ART_URI), MutableStateFlow(null))
                                 browser.subscribe(it.metadata?.getString(MediaMetadata.METADATA_KEY_MEDIA_ID)!!, params)
                             }
                         }
@@ -354,95 +362,67 @@ class MainActivity : ComponentActivity() {
 @ExperimentalMaterialApi
 @ExperimentalPagerApi
 @Composable
-fun Main(connectionState: StateFlow<ConnectionState>,
+fun Main(connectionFlow: StateFlow<ConnectionState>,
     onBackPressed: () -> Unit,
-    screen: StateFlow<Screen>,
+    screenFlow: StateFlow<Screen>,
     playerState: PlayerState,
     setPlaylist: (List<String>, Int) -> Unit,
     onPlayPause: () -> Unit,
     onPrev: () -> Unit,
     onNext: () -> Unit,
     onSettings: () -> Unit) {
-    val screen by screen.collectAsState()
-    if (screen !is Screen.MainScreen) BackHandler(true, onBackPressed)
+    val screen = screenFlow.collectAsState().value
+    if (screen !is Screen.MainScreen)
+        BackHandler(true, onBackPressed)
 
-    Scaffold(topBar = {
-        when (screen) {
-            is Screen.MainScreen, is Screen.ArtistScreen ->
-                TopAppBar(title = {
-                    Text(if (screen is Screen.MainScreen) stringResource(R.string.app_name) else (screen as Screen.ArtistScreen).artistName)
-                },
-                actions = {
-                    var expanded by remember { mutableStateOf(false) }
+    val connectionState by connectionFlow.collectAsState()
+    if (connectionState == ConnectionState.ERROR) {
+        Text("MPD CONNECTION FAILED")
+    } else {
+        val playingState by playerState.state.collectAsState()
+        val playerVisible = playingState == SessionPlayer.PLAYER_STATE_PAUSED || playingState == SessionPlayer.PLAYER_STATE_PLAYING
 
-                    Box(Modifier.padding(end = 16.dp)) {
-                        IconButton({
-                            expanded = true
-                        }) {
-                            Icon(Icons.Default.MoreVert, "More")
-                        }
+        val scope = rememberCoroutineScope()
+        val pagerState = rememberPagerState()
+        val swipeState = rememberSwipeableState(false)
 
-                        DropdownMenu(expanded, onDismissRequest = { expanded = false }) {
-                            DropdownMenuItem({
-                                expanded = false
-                                onSettings()
-                            }) {
-                                Text("Settings")
-                            }
-                        }
-                    }
-                })
-            is Screen.AlbumScreen ->
-                TopAppBar(title = {
-                    Text((screen as Screen.AlbumScreen).albumTitle)
-                },
-                actions = {
-                    var expanded by remember { mutableStateOf(false) }
+        Box(Modifier.fillMaxSize()) {
+            val transition = updateTransition(playerVisible, label = "")
+            val playerHeight = transition.animateDp({ tween() }, label = "") {
+                if (it) 72.dp
+                else 0.dp
+            }
 
-                    Box(Modifier.padding(end = 16.dp)) {
-                        IconButton({
-                            expanded = true
-                        }) {
-                            Icon(Icons.Default.MoreVert, "More")
-                        }
+            val swipeOffsetDp = with(LocalDensity.current) { swipeState.offset.value.toDp() }
 
-                        DropdownMenu(expanded, onDismissRequest = { expanded = false }) {
-                            DropdownMenuItem({
-                                expanded = false
-                                onSettings()
-                            }) {
-                                Text("Settings")
-                            }
-                        }
-                    }
-                })
-        }
-    }) {
-        val connectionState by connectionState.collectAsState()
-        if (connectionState == ConnectionState.ERROR) {
-            Text("MPD CONNECTION FAILED")
-        } else {
-            val playingState by playerState.state.collectAsState()
-            val playerVisible = playingState == SessionPlayer.PLAYER_STATE_PAUSED || playingState == SessionPlayer.PLAYER_STATE_PLAYING
+            Box(Modifier.fillMaxSize().padding(bottom = playerHeight.value - swipeOffsetDp)) {
+                when (screen) {
+                    is Screen.MainScreen ->
+                        Column {
+                            TopAppBar(title = {
+                                Text(stringResource(R.string.app_name))
+                            },
+                                actions = {
+                                    var expanded by remember { mutableStateOf(false) }
 
-            val scope = rememberCoroutineScope()
-            val pagerState = rememberPagerState()
-            val swipeState = rememberSwipeableState(false)
+                                    Box(Modifier.padding(end = 16.dp)) {
+                                        IconButton({
+                                            expanded = true
+                                        }) {
+                                            Icon(Icons.Default.MoreVert, "More")
+                                        }
 
-            BoxWithConstraints(Modifier.fillMaxSize()) {
-                val mainHeight = with(LocalDensity.current) { (maxHeight - 72.dp).toPx() }
-                val transition = updateTransition(playerVisible, label = "")
-                val mainViewHeight = transition.animateDp({ tween() }, label = "") {
-                    if (it) maxHeight - 72.dp
-                    else maxHeight
-                }
-
-                val swipeOffsetDp = with(LocalDensity.current) { swipeState.offset.value.toDp() }
-
-                Box(Modifier.fillMaxWidth().height(mainViewHeight.value + swipeOffsetDp)) {
-                    when (screen) {
-                        is Screen.MainScreen -> Column {
-                            val categories by (screen as Screen.MainScreen).categories.collectAsState()
+                                        DropdownMenu(expanded, onDismissRequest = { expanded = false }) {
+                                            DropdownMenuItem({
+                                                expanded = false
+                                                onSettings()
+                                            }) {
+                                                Text("Settings")
+                                            }
+                                        }
+                                    }
+                                })
+                            val categories by screen.categories.collectAsState()
                             if (categories != null) {
                                 TabRow(selectedTabIndex = pagerState.currentPage, indicator = {
                                     TabRowDefaults.Indicator(Modifier.pagerTabIndicatorOffset(pagerState, it))
@@ -460,7 +440,7 @@ fun Main(connectionState: StateFlow<ConnectionState>,
                                     val list by categories!!.toList()[page].second.second.collectAsState()
                                     if (list != null) {
                                         LazyColumn(Modifier.fillMaxSize()) {
-                                            items((list as List<*>).size) {
+                                            items(list!!.size) {
                                                 list!![it]()
                                             }
                                         }
@@ -473,8 +453,32 @@ fun Main(connectionState: StateFlow<ConnectionState>,
                             }
                         }
 
-                        is Screen.ArtistScreen -> {
-                            val songs by (screen as Screen.ArtistScreen).songs.collectAsState()
+                    is Screen.ArtistScreen ->
+                        Column {
+                            TopAppBar(title = {
+                                Text(if (screen is Screen.MainScreen) stringResource(R.string.app_name) else screen.artistName)
+                            },
+                                actions = {
+                                    var expanded by remember { mutableStateOf(false) }
+
+                                    Box(Modifier.padding(end = 16.dp)) {
+                                        IconButton({
+                                            expanded = true
+                                        }) {
+                                            Icon(Icons.Default.MoreVert, "More")
+                                        }
+
+                                        DropdownMenu(expanded, onDismissRequest = { expanded = false }) {
+                                            DropdownMenuItem({
+                                                expanded = false
+                                                onSettings()
+                                            }) {
+                                                Text("Settings")
+                                            }
+                                        }
+                                    }
+                                })
+                            val songs by screen.songs.collectAsState()
                             if (songs != null) {
                                 LazyColumn(Modifier.fillMaxSize()) {
                                     items(songs!!.size) {
@@ -496,56 +500,49 @@ fun Main(connectionState: StateFlow<ConnectionState>,
                             }
                         }
 
-                        is Screen.AlbumScreen -> {
-                            val tracks by (screen as Screen.AlbumScreen).tracks.collectAsState()
+                    is Screen.AlbumScreen -> {
+                        var scrollOffset by remember { mutableStateOf(0f) }
+
+                        val heightDifference = (372 - 56).dp // Difference between the expanded and redacted state
+
+                        val minOffset = with(LocalDensity.current) {
+                            -heightDifference.toPx()
+                        }
+
+                        val nestedScrollConnection = remember {
+                            object : NestedScrollConnection {
+                                override fun onPostScroll(consumed: Offset, available: Offset, source: NestedScrollSource): Offset {
+                                    scrollOffset += consumed.y
+                                    return super.onPostScroll(consumed, available, source)
+                                }
+                            }
+                        }
+
+                        Box(Modifier.fillMaxSize().nestedScroll(nestedScrollConnection)) {
+                            val offset = max(minOffset, scrollOffset)
+                            val offsetProgress = min(0f, offset * 3f - minOffset * 2f) / (minOffset)
+                            TopAppBar(Modifier.fillMaxWidth().offset { IntOffset(0, offset.roundToInt()) }.height(372.dp),
+                                elevation = if (offset <= minOffset) 4.dp else 0.dp,
+                                contentPadding = PaddingValues()) {
+                                Box(Modifier.fillMaxSize()) {
+                                    GlideImage(screen.art,
+                                        Modifier.fillMaxSize().alpha(1f - offsetProgress),
+                                        requestOptions = {
+                                            RequestOptions().diskCacheStrategy(DiskCacheStrategy.RESOURCE)
+                                        },
+                                        contentScale = ContentScale.Crop)
+
+                                    Text(screen.albumTitle, Modifier.align(Alignment.BottomStart).paddingFromBaseline(bottom = 20.dp).padding(start = (16 + 72 * offsetProgress).dp).alpha(offsetProgress),
+                                    style = MaterialTheme.typography.h6)
+                                }
+                            }
+                            val tracks by screen.tracks.collectAsState()
                             if (tracks != null) {
-                                LazyColumn(Modifier.fillMaxSize()) {
-                                    items(tracks!!.size) {
-                                        val track = tracks!![it].second
-                                        ConstraintLayout(Modifier.fillMaxWidth().height(88.dp).clickable {
-                                            setPlaylist(tracks!!.map { it.first }, it)
-                                        }) {
-                                            val (trackConstraint, titleConstraint, artistConstraint, buttonConstraint) = createRefs()
-
-                                            Text(if (track.disc > 1) "${track.disc}-${track.track}" else track.track.toString(), Modifier.constrainAs(trackConstraint) {
-                                                top.linkTo(parent.top)
-                                                bottom.linkTo(parent.bottom)
-                                                start.linkTo(parent.start, 16.dp)
-                                            },
-                                            style = MaterialTheme.typography.subtitle2)
-
-                                            Text(track.title, Modifier.paddingFromBaseline(40.dp).constrainAs(titleConstraint) {
-                                                top.linkTo(parent.top)
-                                                start.linkTo(trackConstraint.end, 16.dp)
-                                                end.linkTo(buttonConstraint.start, 16.dp)
-
-                                                width = Dimension.fillToConstraints
-                                            },
-                                            style = MaterialTheme.typography.subtitle1,
-                                            maxLines = 1,
-                                            overflow = TextOverflow.Ellipsis)
-
-                                            Text(track.artist, Modifier.paddingFromBaseline(60.dp).constrainAs(artistConstraint) {
-                                                top.linkTo(parent.top)
-                                                start.linkTo(trackConstraint.end, 16.dp)
-                                                end.linkTo(buttonConstraint.start, 16.dp)
-
-                                                width = Dimension.fillToConstraints
-                                            },
-                                            style = MaterialTheme.typography.caption,
-                                            maxLines = 1,
-                                            overflow = TextOverflow.Ellipsis)
-
-                                            IconButton(onClick = {
-
-                                            }, Modifier.constrainAs(buttonConstraint) {
-                                                top.linkTo(parent.top)
-                                                bottom.linkTo(parent.bottom)
-                                                end.linkTo(parent.end, 16.dp)
-                                            }) {
-                                                Icon(Icons.Default.MoreVert, contentDescription = "More")
-                                            }
-                                        }
+                                LazyColumn(Modifier.fillMaxSize().padding(top = 56.dp), contentPadding = PaddingValues(top = (372 - 56).dp)) {
+                                    items(tracks!!.size) { i ->
+                                        TrackView(tracks!![i].second, Modifier.clickable {
+                                            setPlaylist(tracks!!.map { it.first }, i)
+                                        })
                                     }
                                 }
                             } else {
@@ -554,25 +551,25 @@ fun Main(connectionState: StateFlow<ConnectionState>,
                         }
                     }
                 }
+            }
 
-                val justOffScreen = with(LocalDensity.current) { 72.dp.toPx() }.roundToInt()
+            val justOffScreen = with(LocalDensity.current) { 72.dp.roundToPx() }
 
-                transition.AnimatedVisibility({ it },
-                    enter = slideInVertically(tween()) { justOffScreen },
-                    exit = slideOutVertically(tween()) { justOffScreen },
-                    modifier = Modifier.matchParentSize()) {
-                    val playlist by playerState.playlist.collectAsState()
-                    val current by playerState.current.collectAsState()
-                    PlayerSheet(playerVisible,
-                        playingState,
-                        playlist,
-                        current,
-                        swipeState,
-                        onPrev,
-                        onPlayPause,
-                        onNext,
-                        modifier = Modifier.fillMaxSize().offset { IntOffset(0, mainHeight.roundToInt()) })
-                }
+            transition.AnimatedVisibility({ it },
+                enter = slideInVertically(tween()) { justOffScreen },
+                exit = slideOutVertically(tween()) { justOffScreen },
+                modifier = Modifier.align(Alignment.BottomCenter)) {
+                val playlist by playerState.playlist.collectAsState()
+                val current by playerState.current.collectAsState()
+                PlayerSheet(playerVisible,
+                    playingState,
+                    playlist,
+                    current,
+                    swipeState,
+                    onPrev,
+                    onPlayPause,
+                    onNext,
+                    modifier = Modifier.height(playerHeight.value - swipeOffsetDp))
             }
         }
     }
@@ -592,11 +589,15 @@ fun ArtistView(name: String, onClick: () -> Unit) {
 }
 
 @Composable
-fun AlbumView(title: String, artist: String, art: String?, onClick: () -> Unit) {
+fun AlbumView(album: Album, onClick: () -> Unit) {
     ConstraintLayout(Modifier.clickable(onClick = onClick).height(64.dp).fillMaxWidth()) {
         val (artConstraint, titleConstraint, artistConstraint) = createRefs()
 
-        GlideImage(art, Modifier.constrainAs(artConstraint) {
+        val fortyDp = with(LocalDensity.current) {
+            40.dp.toPx().roundToInt()
+        }
+
+        GlideImage(album.art, Modifier.constrainAs(artConstraint) {
             top.linkTo(parent.top, 16.dp)
             bottom.linkTo(parent.bottom, 16.dp)
             start.linkTo(parent.start, 16.dp)
@@ -604,10 +605,11 @@ fun AlbumView(title: String, artist: String, art: String?, onClick: () -> Unit) 
             width = Dimension.value(40.dp)
             height = Dimension.value(40.dp)
         }, requestOptions = {
-            RequestOptions().diskCacheStrategy(DiskCacheStrategy.RESOURCE)
+            RequestOptions().override(fortyDp, fortyDp)
+                .diskCacheStrategy(DiskCacheStrategy.RESOURCE)
         }, contentScale = ContentScale.Crop)
 
-        Text(title, Modifier.paddingFromBaseline(28.dp).constrainAs(titleConstraint) {
+        Text(album.title, Modifier.paddingFromBaseline(28.dp).constrainAs(titleConstraint) {
             top.linkTo(parent.top)
             start.linkTo(artConstraint.end, 16.dp)
             end.linkTo(parent.end, 16.dp)
@@ -615,13 +617,59 @@ fun AlbumView(title: String, artist: String, art: String?, onClick: () -> Unit) 
             width = Dimension.fillToConstraints
         }, style = MaterialTheme.typography.subtitle1)
 
-        Text(artist, Modifier.paddingFromBaseline(48.dp).constrainAs(artistConstraint) {
+        Text(album.artist, Modifier.paddingFromBaseline(48.dp).constrainAs(artistConstraint) {
             top.linkTo(parent.top)
             start.linkTo(artConstraint.end, 16.dp)
             end.linkTo(parent.end, 16.dp)
 
             width = Dimension.fillToConstraints
         }, style = MaterialTheme.typography.caption)
+    }
+}
+
+@Composable
+fun TrackView(track: Track, modifier: Modifier = Modifier) {
+    ConstraintLayout(modifier.fillMaxWidth().height(88.dp)) {
+        val (trackConstraint, titleConstraint, artistConstraint, buttonConstraint) = createRefs()
+
+        Text(if (track.disc > 1) "${track.disc}-${track.track}" else track.track.toString(), Modifier.constrainAs(trackConstraint) {
+            top.linkTo(parent.top)
+            bottom.linkTo(parent.bottom)
+            start.linkTo(parent.start, 16.dp)
+        },
+            style = MaterialTheme.typography.subtitle2)
+
+        Text(track.title, Modifier.paddingFromBaseline(40.dp).constrainAs(titleConstraint) {
+            top.linkTo(parent.top)
+            start.linkTo(trackConstraint.end, 16.dp)
+            end.linkTo(buttonConstraint.start, 16.dp)
+
+            width = Dimension.fillToConstraints
+        },
+            style = MaterialTheme.typography.subtitle1,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis)
+
+        Text(track.artist, Modifier.paddingFromBaseline(60.dp).constrainAs(artistConstraint) {
+            top.linkTo(parent.top)
+            start.linkTo(trackConstraint.end, 16.dp)
+            end.linkTo(buttonConstraint.start, 16.dp)
+
+            width = Dimension.fillToConstraints
+        },
+            style = MaterialTheme.typography.caption,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis)
+
+        IconButton(onClick = {
+
+        }, Modifier.constrainAs(buttonConstraint) {
+            top.linkTo(parent.top)
+            bottom.linkTo(parent.bottom)
+            end.linkTo(parent.end, 16.dp)
+        }) {
+            Icon(Icons.Default.MoreVert, contentDescription = "More")
+        }
     }
 }
 
@@ -633,7 +681,7 @@ sealed interface Screen {
         val albums: StateFlow<List<Pair<String, Album>>?>,
         val songs: StateFlow<List<Pair<String, Song>>?>) : Screen
 
-    class AlbumScreen(val id: String, val albumTitle: String, val tracks: StateFlow<List<Pair<String, Track>>?>) : Screen
+    class AlbumScreen(val id: String, val albumTitle: String, val art: String?, val tracks: StateFlow<List<Pair<String, Track>>?>) : Screen
 }
 
 data class PlayerState(val state: StateFlow<Int>, val playlist: StateFlow<List<Pair<String, Song>>>, val current: StateFlow<Pair<Int, Bitmap?>>)
