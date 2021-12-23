@@ -316,6 +316,7 @@ class MusicService : MediaLibraryService() {
                                             artistName.replace("\"", "\\\\\\\"")
                                         }\\\") AND (album == \\\"${albumTitle.replace("\"", "\\\\\\\"")}\\\"))\" window 0:1")
 
+                                        // TODO: What if the artist or the album contain a '/'?
                                         metadataBuilder.putString(MediaMetadata.METADATA_KEY_MEDIA_ID, "/albums/noid/noid/$artistName/$albumTitle")
                                             .putString(MediaMetadata.METADATA_KEY_TITLE, albumTitle)
                                             .putString(MediaMetadata.METADATA_KEY_ARTIST, artistName)
@@ -370,9 +371,8 @@ class MusicService : MediaLibraryService() {
                                         val albumTitle = line.drop("Album: ".length)
 
                                         sb.appendLine("find \"((MUSICBRAINZ_ARTISTID == \\\"$artistId\\\") AND (MUSICBRAINZ_ALBUMID == \\\"$albumId\\\"))\" window 0:1")
-
-                                        metadataBuilder.putString(MediaMetadata.METADATA_KEY_MEDIA_ID,
-                                            "/albums/$albumId") // TODO: Check if MusicBrainz ALBUMID is unique per artist or unique in general
+                                         // TODO: Check if MusicBrainz ALBUMID is unique per artist or unique in general
+                                        metadataBuilder.putString(MediaMetadata.METADATA_KEY_MEDIA_ID, "/albums/$albumId")
                                             .putString(MediaMetadata.METADATA_KEY_TITLE, albumTitle)
                                             .putString(MediaMetadata.METADATA_KEY_ARTIST, artistName)
                                     }
@@ -470,8 +470,15 @@ class MusicService : MediaLibraryService() {
                                 .putString(MediaMetadata.METADATA_KEY_TITLE, title)
                                 .putString(MediaMetadata.METADATA_KEY_ALBUM_ART_URI, "${mediaLibrary}/${filename.substringBeforeLast('/')}/cover.jpg")
                                 .setExtras(Bundle().apply {
-                                    putString(METADATA_EXTRA_ARTIST_ID, artistId)
-                                    putString(METADATA_EXTRA_ALBUM_ID, albumId)
+                                    putString(METADATA_EXTRA_ARTIST_ID, parentId)
+                                    putString(METADATA_EXTRA_ALBUM_ID, if (albumId.isEmpty()) {
+                                        if (parentId.startsWith("/artists/noid"))
+                                            "/albums/noid/noid/$artistName/$albumTitle"
+                                        else
+                                            "/albums/noid/${artistId.drop(1)}/$albumTitle"
+                                    } else {
+                                        "albums/$albumId"
+                                    })
                                 })
                                 .build())
                             .build()
@@ -485,6 +492,77 @@ class MusicService : MediaLibraryService() {
                 }
 
                 parentId.startsWith("/albums") -> {
+                    val albumId = parentId.drop("/albums".length)
+                    val buffer = if (albumId.startsWith("/noid/noid")) {
+                        val artist = albumId.drop("/noid/noid/".length).takeWhile { it != '/' }.replace("\"", "\\\\\\\"")
+                        val album = albumId.drop("/noid/noid/".length).dropWhile { it != '/' }.drop(1).replace("\"", "\\\\\\\"")
+                        timeoutInhibitor.send("find \"((artist == \\\"$artist\\\") AND (album == \\\"$album\\\"))\" sort disc\n")
+                    } else if (albumId.startsWith("/noid")) {
+                        val artist = albumId.drop("/noid/".length).takeWhile { it != '/' }
+                        val album = albumId.drop("/noid/".length).dropWhile { it != '/' }.drop(1).replace("\"", "\\\\\\\"")
+                        timeoutInhibitor.send("find \"((MUSICBRAINZ_ARTISTID == \\\"$artist\\\") AND (album == \\\"$album\\\"))\" sort disc\n")
+                    } else {
+                        timeoutInhibitor.send("find \"(MUSICBRAINZ_ALBUMID == \\\"${albumId.drop(1)}\\\")\" sort disc\n")
+                    }
+
+                    val items = mutableListOf<MediaItem>()
+                    val reader = BufferedReader(StringReader(StandardCharsets.UTF_8.decode(buffer).toString()))
+                    var line = reader.readLine()
+                    while (line != "OK") {
+                        val filename: String = line.drop("file: ".length)
+                        var duration: Long = 0
+                        var artistId = ""
+                        var artistName = ""
+                        var albumTitle = ""
+                        var title = ""
+                        var disc = 0.toLong()
+                        var track  = 0.toLong()
+                        line = reader.readLine()
+                        while (!line.startsWith("file: ") && line != "OK") {
+                            when {
+                                line.startsWith("MUSICBRAINZ_ARTISTID: ") -> artistId = line.drop("MUSICBRAINZ_ARTISTID: ".length)
+
+                                line.startsWith("Artist: ") -> artistName = line.drop("Artist: ".length)
+
+                                line.startsWith("Album: ") -> albumTitle = line.drop("Album: ".length)
+
+                                line.startsWith("duration: ") -> duration = line.drop("duration: ".length).toDouble().toLong()
+
+                                line.startsWith("Title: ") -> title = line.drop("Title: ".length)
+
+                                line.startsWith("Disc: ") -> disc = line.drop("Disc: ".length).toLong()
+
+                                line.startsWith("Track: ") -> track = line.drop("Track: ".length).toLong()
+                            }
+
+                            line = reader.readLine()
+                        }
+
+                        val mediaItem = MediaItem.Builder()
+                            .setMetadata(MediaMetadata.Builder()
+                                .putString(MediaMetadata.METADATA_KEY_MEDIA_ID, filename)
+                                .putLong(MediaMetadata.METADATA_KEY_BROWSABLE, MediaMetadata.BROWSABLE_TYPE_NONE)
+                                .putLong(MediaMetadata.METADATA_KEY_PLAYABLE, 1)
+                                .putLong(MediaMetadata.METADATA_KEY_DURATION, duration * 1000)
+                                .putString(MediaMetadata.METADATA_KEY_TITLE, title)
+                                .putString(MediaMetadata.METADATA_KEY_ARTIST, artistName)
+                                .putString(MediaMetadata.METADATA_KEY_ALBUM, albumTitle)
+                                .putLong(MediaMetadata.METADATA_KEY_DISC_NUMBER, disc)
+                                .putLong(MediaMetadata.METADATA_KEY_TRACK_NUMBER, track)
+                                .putString(MediaMetadata.METADATA_KEY_ALBUM_ART_URI, "${mediaLibrary}/${filename.substringBeforeLast('/')}/cover.jpg")
+                                .setExtras(Bundle().apply {
+                                    putString(METADATA_EXTRA_ARTIST_ID, if (artistId.isEmpty()) "/artists/$artistName" else artistId)
+                                    putString(METADATA_EXTRA_ALBUM_ID, parentId)
+                                })
+                                .build())
+                            .build()
+
+                        items.add(mediaItem)
+                    }
+
+                    clients[controller]!!.peek().second.putAll(items.associateBy({ it.metadata!!.getString(MediaMetadata.METADATA_KEY_MEDIA_ID)!! }, { it }))
+
+                    return LibraryResult(LibraryResult.RESULT_SUCCESS, items, params)
                 }
             }
 

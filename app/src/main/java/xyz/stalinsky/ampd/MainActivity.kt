@@ -14,6 +14,7 @@ import androidx.activity.compose.setContent
 import androidx.compose.animation.*
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.scrollable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material.*
@@ -23,6 +24,8 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.constraintlayout.compose.ConstraintLayout
@@ -51,6 +54,7 @@ import xyz.stalinsky.ampd.ui.PlayerSheet
 import xyz.stalinsky.ampd.ui.theme.AMPDTheme
 import java.util.*
 import java.util.concurrent.Executors
+import kotlin.math.max
 import kotlin.math.roundToInt
 
 class MainActivity : ComponentActivity() {
@@ -301,10 +305,9 @@ class MainActivity : ComponentActivity() {
                             AlbumView(it.metadata?.getString(MediaMetadata.METADATA_KEY_TITLE) ?: "",
                                 it.metadata?.getString(MediaMetadata.METADATA_KEY_ARTIST) ?: "",
                                 it.metadata?.getString(MediaMetadata.METADATA_KEY_ALBUM_ART_URI)) {
-                                Log.i("MainActivity", "Album clicked")
-                                //backstack.push(screenState.value)
-                                //screenState.postValue(Screen.ArtistScreen(it.metadata?.getString(MediaMetadata.METADATA_KEY_TITLE)!!, MutableLiveData(null)))
-                                //browser.subscribe(it.metadata?.getString(MediaMetadata.METADATA_KEY_MEDIA_ID)!!, params)
+                                backstack.push(screenState.value)
+                                screenState.value = Screen.AlbumScreen(it.metadata?.getString(MediaMetadata.METADATA_KEY_MEDIA_ID)!!, it.metadata?.getString(MediaMetadata.METADATA_KEY_TITLE)!!, MutableStateFlow(null))
+                                browser.subscribe(it.metadata?.getString(MediaMetadata.METADATA_KEY_MEDIA_ID)!!, params)
                             }
                         }
 
@@ -328,6 +331,20 @@ class MainActivity : ComponentActivity() {
                     val screen = screenState.value
                     if (screen is Screen.ArtistScreen) (screen.songs as MutableStateFlow).value = children
                 }
+
+                parentId.startsWith("/albums") -> {
+                    val children = browser.getChildren(parentId, 0, Int.MAX_VALUE, params).get().mediaItems?.map {
+                        Pair(it.metadata?.getString(MediaMetadata.METADATA_KEY_MEDIA_ID)!!,
+                            Track(it.metadata?.getString(MediaMetadata.METADATA_KEY_TITLE)!!,
+                                it.metadata?.extras?.getString(MusicService.METADATA_EXTRA_ARTIST_ID)!!,
+                                it.metadata?.getString(MediaMetadata.METADATA_KEY_ARTIST)!!,
+                                it.metadata?.getLong(MediaMetadata.METADATA_KEY_DISC_NUMBER)!!.toInt(),
+                                it.metadata?.getLong(MediaMetadata.METADATA_KEY_TRACK_NUMBER)!!.toInt()))
+                    }
+
+                    val screen = screenState.value
+                    if (screen is Screen.AlbumScreen) (screen.tracks as MutableStateFlow).value = children
+                }
             }
         }
     }
@@ -350,29 +367,56 @@ fun Main(connectionState: StateFlow<ConnectionState>,
     if (screen !is Screen.MainScreen) BackHandler(true, onBackPressed)
 
     Scaffold(topBar = {
-        TopAppBar(title = {
-            Text("MMPD")
+        when (screen) {
+            is Screen.MainScreen, is Screen.ArtistScreen ->
+                TopAppBar(title = {
+                    Text(if (screen is Screen.MainScreen) stringResource(R.string.app_name) else (screen as Screen.ArtistScreen).artistName)
+                },
+                actions = {
+                    var expanded by remember { mutableStateOf(false) }
 
-        }, actions = {
-            var expanded by remember { mutableStateOf(false) }
+                    Box(Modifier.padding(end = 16.dp)) {
+                        IconButton({
+                            expanded = true
+                        }) {
+                            Icon(Icons.Default.MoreVert, "More")
+                        }
 
-            Box(Modifier.padding(end = 16.dp)) {
-                IconButton({
-                    expanded = true
-                }) {
-                    Icon(Icons.Default.MoreVert, "More")
-                }
-
-                DropdownMenu(expanded, onDismissRequest = { expanded = false }) {
-                    DropdownMenuItem({
-                        expanded = false
-                        onSettings()
-                    }) {
-                        Text("Settings")
+                        DropdownMenu(expanded, onDismissRequest = { expanded = false }) {
+                            DropdownMenuItem({
+                                expanded = false
+                                onSettings()
+                            }) {
+                                Text("Settings")
+                            }
+                        }
                     }
-                }
-            }
-        })
+                })
+            is Screen.AlbumScreen ->
+                TopAppBar(title = {
+                    Text((screen as Screen.AlbumScreen).albumTitle)
+                },
+                actions = {
+                    var expanded by remember { mutableStateOf(false) }
+
+                    Box(Modifier.padding(end = 16.dp)) {
+                        IconButton({
+                            expanded = true
+                        }) {
+                            Icon(Icons.Default.MoreVert, "More")
+                        }
+
+                        DropdownMenu(expanded, onDismissRequest = { expanded = false }) {
+                            DropdownMenuItem({
+                                expanded = false
+                                onSettings()
+                            }) {
+                                Text("Settings")
+                            }
+                        }
+                    }
+                })
+        }
     }) {
         val connectionState by connectionState.collectAsState()
         if (connectionState == ConnectionState.ERROR) {
@@ -395,7 +439,7 @@ fun Main(connectionState: StateFlow<ConnectionState>,
 
                 val swipeOffsetDp = with(LocalDensity.current) { swipeState.offset.value.toDp() }
 
-                BoxWithConstraints(Modifier.fillMaxWidth().height(mainViewHeight.value + swipeOffsetDp)) {
+                Box(Modifier.fillMaxWidth().height(mainViewHeight.value + swipeOffsetDp)) {
                     when (screen) {
                         is Screen.MainScreen -> Column {
                             val categories by (screen as Screen.MainScreen).categories.collectAsState()
@@ -449,6 +493,63 @@ fun Main(connectionState: StateFlow<ConnectionState>,
                                 }
                             } else {
                                 Text("null")
+                            }
+                        }
+
+                        is Screen.AlbumScreen -> {
+                            val tracks by (screen as Screen.AlbumScreen).tracks.collectAsState()
+                            if (tracks != null) {
+                                LazyColumn(Modifier.fillMaxSize()) {
+                                    items(tracks!!.size) {
+                                        val track = tracks!![it].second
+                                        ConstraintLayout(Modifier.fillMaxWidth().height(88.dp).clickable {
+                                            setPlaylist(tracks!!.map { it.first }, it)
+                                        }) {
+                                            val (trackConstraint, titleConstraint, artistConstraint, buttonConstraint) = createRefs()
+
+                                            Text(if (track.disc > 1) "${track.disc}-${track.track}" else track.track.toString(), Modifier.constrainAs(trackConstraint) {
+                                                top.linkTo(parent.top)
+                                                bottom.linkTo(parent.bottom)
+                                                start.linkTo(parent.start, 16.dp)
+                                            },
+                                            style = MaterialTheme.typography.subtitle2)
+
+                                            Text(track.title, Modifier.paddingFromBaseline(40.dp).constrainAs(titleConstraint) {
+                                                top.linkTo(parent.top)
+                                                start.linkTo(trackConstraint.end, 16.dp)
+                                                end.linkTo(buttonConstraint.start, 16.dp)
+
+                                                width = Dimension.fillToConstraints
+                                            },
+                                            style = MaterialTheme.typography.subtitle1,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis)
+
+                                            Text(track.artist, Modifier.paddingFromBaseline(60.dp).constrainAs(artistConstraint) {
+                                                top.linkTo(parent.top)
+                                                start.linkTo(trackConstraint.end, 16.dp)
+                                                end.linkTo(buttonConstraint.start, 16.dp)
+
+                                                width = Dimension.fillToConstraints
+                                            },
+                                            style = MaterialTheme.typography.caption,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis)
+
+                                            IconButton(onClick = {
+
+                                            }, Modifier.constrainAs(buttonConstraint) {
+                                                top.linkTo(parent.top)
+                                                bottom.linkTo(parent.bottom)
+                                                end.linkTo(parent.end, 16.dp)
+                                            }) {
+                                                Icon(Icons.Default.MoreVert, contentDescription = "More")
+                                            }
+                                        }
+                                    }
+                                }
+                            } else {
+                                Text ("null")
                             }
                         }
                     }
@@ -531,6 +632,8 @@ sealed interface Screen {
         val artistName: String,
         val albums: StateFlow<List<Pair<String, Album>>?>,
         val songs: StateFlow<List<Pair<String, Song>>?>) : Screen
+
+    class AlbumScreen(val id: String, val albumTitle: String, val tracks: StateFlow<List<Pair<String, Track>>?>) : Screen
 }
 
 data class PlayerState(val state: StateFlow<Int>, val playlist: StateFlow<List<Pair<String, Song>>>, val current: StateFlow<Pair<Int, Bitmap?>>)
