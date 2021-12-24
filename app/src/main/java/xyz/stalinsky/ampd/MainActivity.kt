@@ -541,9 +541,9 @@ fun Main(connectionFlow: StateFlow<ConnectionState>,
                             val tracks = screen.tracks.collectAsState().value
                             if (tracks != null) {
                                 LazyColumn(Modifier.fillMaxSize().padding(top = redactedHeight), contentPadding = PaddingValues(top = heightDifference)) {
-                                    items(tracks!!.size) { i ->
-                                        TrackView(tracks!![i].second, Modifier.clickable {
-                                            setPlaylist(tracks!!.map { it.first }, i)
+                                    items(tracks.size) { i ->
+                                        TrackView(tracks[i].second, Modifier.clickable {
+                                            setPlaylist(tracks.map { it.first }, i)
                                         })
                                     }
                                 }
