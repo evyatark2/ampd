@@ -9,7 +9,6 @@ import androidx.compose.foundation.gestures.Orientation
 import androidx.compose.foundation.layout.*
 import androidx.compose.material.*
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.List
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.rememberCoroutineScope
@@ -24,7 +23,6 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.vectorResource
 import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.constraintlayout.compose.ConstraintLayout
 import androidx.constraintlayout.compose.Dimension
@@ -33,29 +31,25 @@ import androidx.palette.graphics.Palette
 import kotlinx.coroutines.launch
 import xyz.stalinsky.ampd.R
 import xyz.stalinsky.ampd.Song
-import kotlin.math.roundToInt
 
 @ExperimentalMaterialApi
 @Composable
 fun PlayerSheet(enabled: Boolean,
-    state: Int,
-    playlist: List<Pair<String, Song>>,
-    currentItem: Pair<Int, Bitmap?>,
-    swipeState: SwipeableState<Boolean>,
-    onPrev: () -> Unit,
-    onPlayPause: () -> Unit,
-    onNext: () -> Unit,
-    modifier: Modifier) {
+                state: Int,
+                playlist: List<Pair<String, Song>>,
+                currentItem: Pair<Int, Bitmap?>,
+                swipeState: SwipeableState<Boolean>,
+                onPrev: () -> Unit,
+                onPlayPause: () -> Unit,
+                onNext: () -> Unit,
+                modifier: Modifier) {
     val scope = rememberCoroutineScope()
     val threeHundredDp = with(LocalDensity.current) { 300.dp.toPx() }
-    Surface(modifier
-            .swipeable(swipeState, mapOf(0f to false, -threeHundredDp to true), Orientation.Vertical, enabled)
-            .clickable(enabled) {
-                scope.launch {
-                    swipeState.animateTo(!swipeState.currentValue)
-                }
-            },
-        elevation = 4.dp) {
+    Surface(modifier.swipeable(swipeState, mapOf(0f to false, -threeHundredDp to true), Orientation.Vertical, enabled).clickable(enabled) {
+            scope.launch {
+                swipeState.animateTo(!swipeState.currentValue)
+            }
+        }, elevation = 4.dp) {
         Box(Modifier.fillMaxSize()) {
             val palette = currentItem.second?.let {
                 Palette.from(it).generate()
@@ -168,13 +162,13 @@ fun RedactedPlayer(title: String, artist: String, alpha: Float, playerState: Int
 
 @Composable
 fun ExpandedPlayer(title: String,
-    artist: String,
-    art: Bitmap?,
-    alpha: Float,
-    playerState: Int,
-    onPrev: () -> Unit,
-    onPlayPause: () -> Unit,
-    onNext: () -> Unit) {
+                   artist: String,
+                   art: Bitmap?,
+                   alpha: Float,
+                   playerState: Int,
+                   onPrev: () -> Unit,
+                   onPlayPause: () -> Unit,
+                   onNext: () -> Unit) {
     if (alpha > 0f) {
         ConstraintLayout(Modifier.fillMaxWidth().height(372.dp).alpha(alpha)) {
             val (imageConstraint, titleConstraint, artistConstraint, playlistButtonConstraint, backConstraint, playConstraint, forwardConstraint) = createRefs()

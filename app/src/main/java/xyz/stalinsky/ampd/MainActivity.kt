@@ -523,8 +523,7 @@ fun Main(connectionFlow: StateFlow<ConnectionState>,
                             val offset = max(minOffset, scrollOffset)
                             val offsetProgress = min(0f, offset * 3f - minOffset * 2f) / (minOffset)
                             TopAppBar(Modifier.fillMaxWidth().offset { IntOffset(0, offset.roundToInt()) }.height(expandedHeight),
-                                elevation = if (offset <= minOffset) 4.dp else 0.dp,
-                                contentPadding = PaddingValues()) {
+                                elevation = if (offset <= minOffset) 4.dp else 0.dp) {
                                 Box(Modifier.fillMaxSize()) {
                                     GlideImage(screen.art, Modifier.fillMaxSize().alpha(1f - offsetProgress), requestOptions = {
                                         RequestOptions().diskCacheStrategy(DiskCacheStrategy.RESOURCE)
@@ -538,6 +537,7 @@ fun Main(connectionFlow: StateFlow<ConnectionState>,
                                         style = MaterialTheme.typography.h6)
                                 }
                             }
+
                             val tracks = screen.tracks.collectAsState().value
                             if (tracks != null) {
                                 LazyColumn(Modifier.fillMaxSize().padding(top = redactedHeight), contentPadding = PaddingValues(top = heightDifference)) {
