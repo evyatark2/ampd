@@ -314,7 +314,10 @@ class MainActivity : ComponentActivity() {
                                 it.metadata?.getString(MediaMetadata.METADATA_KEY_ARTIST) ?: "",
                                 it.metadata?.getString(MediaMetadata.METADATA_KEY_ALBUM_ART_URI))) {
                                 backstack.push(screenState.value)
-                                screenState.value = Screen.AlbumScreen(it.metadata?.getString(MediaMetadata.METADATA_KEY_MEDIA_ID)!!, it.metadata?.getString(MediaMetadata.METADATA_KEY_TITLE)!!, it.metadata?.getString(MediaMetadata.METADATA_KEY_ALBUM_ART_URI), MutableStateFlow(null))
+                                screenState.value = Screen.AlbumScreen(it.metadata?.getString(MediaMetadata.METADATA_KEY_MEDIA_ID)!!,
+                                    it.metadata?.getString(MediaMetadata.METADATA_KEY_TITLE)!!,
+                                    it.metadata?.getString(MediaMetadata.METADATA_KEY_ALBUM_ART_URI),
+                                    MutableStateFlow(null))
                                 browser.subscribe(it.metadata?.getString(MediaMetadata.METADATA_KEY_MEDIA_ID)!!, params)
                             }
                         }
@@ -372,8 +375,7 @@ fun Main(connectionFlow: StateFlow<ConnectionState>,
     onNext: () -> Unit,
     onSettings: () -> Unit) {
     val screen = screenFlow.collectAsState().value
-    if (screen !is Screen.MainScreen)
-        BackHandler(true, onBackPressed)
+    if (screen !is Screen.MainScreen) BackHandler(true, onBackPressed)
 
     val connectionState by connectionFlow.collectAsState()
     if (connectionState == ConnectionState.ERROR) {
@@ -395,110 +397,107 @@ fun Main(connectionFlow: StateFlow<ConnectionState>,
 
             val swipeOffsetDp = with(LocalDensity.current) { swipeState.offset.value.toDp() }
 
-            Box(Modifier.fillMaxSize().padding(bottom = playerHeight.value - swipeOffsetDp)) {
+            Box(Modifier.fillMaxSize().padding(bottom = playerHeight.value)) {
                 when (screen) {
-                    is Screen.MainScreen ->
-                        Column {
-                            TopAppBar(title = {
-                                Text(stringResource(R.string.app_name))
-                            },
-                                actions = {
-                                    var expanded by remember { mutableStateOf(false) }
+                    is Screen.MainScreen -> Column {
+                        TopAppBar(title = {
+                            Text(stringResource(R.string.app_name))
+                        }, actions = {
+                            var expanded by remember { mutableStateOf(false) }
 
-                                    Box(Modifier.padding(end = 16.dp)) {
-                                        IconButton({
-                                            expanded = true
-                                        }) {
-                                            Icon(Icons.Default.MoreVert, "More")
-                                        }
-
-                                        DropdownMenu(expanded, onDismissRequest = { expanded = false }) {
-                                            DropdownMenuItem({
-                                                expanded = false
-                                                onSettings()
-                                            }) {
-                                                Text("Settings")
-                                            }
-                                        }
-                                    }
-                                })
-                            val categories by screen.categories.collectAsState()
-                            if (categories != null) {
-                                TabRow(selectedTabIndex = pagerState.currentPage, indicator = {
-                                    TabRowDefaults.Indicator(Modifier.pagerTabIndicatorOffset(pagerState, it))
+                            Box(Modifier.padding(end = 16.dp)) {
+                                IconButton({
+                                    expanded = true
                                 }) {
-                                    categories!!.toList().forEachIndexed { i, pair ->
-                                        Tab(selected = i == pagerState.currentPage, onClick = {
-                                            scope.launch {
-                                                pagerState.animateScrollToPage(i)
-                                            }
-                                        }, text = { Text(pair.second.first) })
-                                    }
+                                    Icon(Icons.Default.MoreVert, "More")
                                 }
 
-                                HorizontalPager(count = categories!!.size, state = pagerState) { page ->
-                                    val list by categories!!.toList()[page].second.second.collectAsState()
-                                    if (list != null) {
-                                        LazyColumn(Modifier.fillMaxSize()) {
-                                            items(list!!.size) {
-                                                list!![it]()
-                                            }
-                                        }
-                                    } else {
-                                        Text("null")
+                                DropdownMenu(expanded, onDismissRequest = { expanded = false }) {
+                                    DropdownMenuItem({
+                                        expanded = false
+                                        onSettings()
+                                    }) {
+                                        Text("Settings")
                                     }
                                 }
-                            } else {
-                                Text("Loading")
                             }
-                        }
+                        })
 
-                    is Screen.ArtistScreen ->
-                        Column {
-                            TopAppBar(title = {
-                                Text(if (screen is Screen.MainScreen) stringResource(R.string.app_name) else screen.artistName)
-                            },
-                                actions = {
-                                    var expanded by remember { mutableStateOf(false) }
-
-                                    Box(Modifier.padding(end = 16.dp)) {
-                                        IconButton({
-                                            expanded = true
-                                        }) {
-                                            Icon(Icons.Default.MoreVert, "More")
+                        val categories = screen.categories.collectAsState().value
+                        if (categories != null) {
+                            TabRow(selectedTabIndex = pagerState.currentPage, indicator = {
+                                TabRowDefaults.Indicator(Modifier.pagerTabIndicatorOffset(pagerState, it))
+                            }) {
+                                categories.toList().forEachIndexed { i, pair ->
+                                    Tab(selected = i == pagerState.currentPage, onClick = {
+                                        scope.launch {
+                                            pagerState.animateScrollToPage(i)
                                         }
+                                    }, text = { Text(pair.second.first) })
+                                }
+                            }
 
-                                        DropdownMenu(expanded, onDismissRequest = { expanded = false }) {
-                                            DropdownMenuItem({
-                                                expanded = false
-                                                onSettings()
-                                            }) {
-                                                Text("Settings")
-                                            }
+                            HorizontalPager(count = categories.size, state = pagerState) { page ->
+                                val list = categories.toList()[page].second.second.collectAsState().value
+                                if (list != null) {
+                                    LazyColumn(Modifier.fillMaxSize()) {
+                                        items(list.size) {
+                                            list[it]()
                                         }
                                     }
-                                })
-                            val songs by screen.songs.collectAsState()
-                            if (songs != null) {
-                                LazyColumn(Modifier.fillMaxSize()) {
-                                    items(songs!!.size) {
-                                        ConstraintLayout(Modifier.fillMaxWidth().height(72.dp).clickable {
-                                            setPlaylist(songs!!.map { it.first }, it)
-                                        }) {
-                                            val (titleConstraint) = createRefs()
+                                } else {
+                                    Text("null")
+                                }
+                            }
+                        } else {
+                            Text("Loading")
+                        }
+                    }
 
-                                            Text(songs!![it].second.title, Modifier.constrainAs(titleConstraint) {
-                                                top.linkTo(parent.top)
-                                                bottom.linkTo(parent.bottom)
-                                                start.linkTo(parent.start, 16.dp)
-                                            })
-                                        }
+                    is Screen.ArtistScreen -> Column {
+                        TopAppBar(title = {
+                            Text(screen.artistName)
+                        }, actions = {
+                            var expanded by remember { mutableStateOf(false) }
+
+                            Box(Modifier.padding(end = 16.dp)) {
+                                IconButton({
+                                    expanded = true
+                                }) {
+                                    Icon(Icons.Default.MoreVert, "More")
+                                }
+
+                                DropdownMenu(expanded, onDismissRequest = { expanded = false }) {
+                                    DropdownMenuItem({
+                                        expanded = false
+                                        onSettings()
+                                    }) {
+                                        Text("Settings")
                                     }
                                 }
-                            } else {
-                                Text("null")
                             }
+                        })
+                        val songs = screen.songs.collectAsState().value
+                        if (songs != null) {
+                            LazyColumn(Modifier.fillMaxSize()) {
+                                items(songs.size) {
+                                    ConstraintLayout(Modifier.fillMaxWidth().height(72.dp).clickable {
+                                        setPlaylist(songs.map { it.first }, it)
+                                    }) {
+                                        val (titleConstraint) = createRefs()
+
+                                        Text(songs[it].second.title, Modifier.constrainAs(titleConstraint) {
+                                            top.linkTo(parent.top)
+                                            bottom.linkTo(parent.bottom)
+                                            start.linkTo(parent.start, 16.dp)
+                                        })
+                                    }
+                                }
+                            }
+                        } else {
+                            Text("null")
                         }
+                    }
 
                     is Screen.AlbumScreen -> {
                         var scrollOffset by remember { mutableStateOf(0f) }
@@ -525,18 +524,19 @@ fun Main(connectionFlow: StateFlow<ConnectionState>,
                                 elevation = if (offset <= minOffset) 4.dp else 0.dp,
                                 contentPadding = PaddingValues()) {
                                 Box(Modifier.fillMaxSize()) {
-                                    GlideImage(screen.art,
-                                        Modifier.fillMaxSize().alpha(1f - offsetProgress),
-                                        requestOptions = {
-                                            RequestOptions().diskCacheStrategy(DiskCacheStrategy.RESOURCE)
-                                        },
-                                        contentScale = ContentScale.Crop)
+                                    GlideImage(screen.art, Modifier.fillMaxSize().alpha(1f - offsetProgress), requestOptions = {
+                                        RequestOptions().diskCacheStrategy(DiskCacheStrategy.RESOURCE)
+                                    }, contentScale = ContentScale.Crop)
 
-                                    Text(screen.albumTitle, Modifier.align(Alignment.BottomStart).paddingFromBaseline(bottom = 20.dp).padding(start = (16 + 72 * offsetProgress).dp).alpha(offsetProgress),
-                                    style = MaterialTheme.typography.h6)
+                                    Text(screen.albumTitle,
+                                        Modifier.align(Alignment.BottomStart)
+                                            .paddingFromBaseline(bottom = 20.dp)
+                                            .padding(start = (16 + 72 * offsetProgress).dp)
+                                            .alpha(offsetProgress),
+                                        style = MaterialTheme.typography.h6)
                                 }
                             }
-                            val tracks by screen.tracks.collectAsState()
+                            val tracks = screen.tracks.collectAsState().value
                             if (tracks != null) {
                                 LazyColumn(Modifier.fillMaxSize().padding(top = 56.dp), contentPadding = PaddingValues(top = (372 - 56).dp)) {
                                     items(tracks!!.size) { i ->
@@ -546,7 +546,7 @@ fun Main(connectionFlow: StateFlow<ConnectionState>,
                                     }
                                 }
                             } else {
-                                Text ("null")
+                                Text("null")
                             }
                         }
                     }
@@ -605,8 +605,7 @@ fun AlbumView(album: Album, onClick: () -> Unit) {
             width = Dimension.value(40.dp)
             height = Dimension.value(40.dp)
         }, requestOptions = {
-            RequestOptions().override(fortyDp, fortyDp)
-                .diskCacheStrategy(DiskCacheStrategy.RESOURCE)
+            RequestOptions().override(fortyDp, fortyDp).diskCacheStrategy(DiskCacheStrategy.RESOURCE)
         }, contentScale = ContentScale.Crop)
 
         Text(album.title, Modifier.paddingFromBaseline(28.dp).constrainAs(titleConstraint) {
@@ -636,8 +635,7 @@ fun TrackView(track: Track, modifier: Modifier = Modifier) {
             top.linkTo(parent.top)
             bottom.linkTo(parent.bottom)
             start.linkTo(parent.start, 16.dp)
-        },
-            style = MaterialTheme.typography.subtitle2)
+        }, style = MaterialTheme.typography.subtitle2)
 
         Text(track.title, Modifier.paddingFromBaseline(40.dp).constrainAs(titleConstraint) {
             top.linkTo(parent.top)
@@ -645,10 +643,7 @@ fun TrackView(track: Track, modifier: Modifier = Modifier) {
             end.linkTo(buttonConstraint.start, 16.dp)
 
             width = Dimension.fillToConstraints
-        },
-            style = MaterialTheme.typography.subtitle1,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis)
+        }, style = MaterialTheme.typography.subtitle1, maxLines = 1, overflow = TextOverflow.Ellipsis)
 
         Text(track.artist, Modifier.paddingFromBaseline(60.dp).constrainAs(artistConstraint) {
             top.linkTo(parent.top)
@@ -656,10 +651,7 @@ fun TrackView(track: Track, modifier: Modifier = Modifier) {
             end.linkTo(buttonConstraint.start, 16.dp)
 
             width = Dimension.fillToConstraints
-        },
-            style = MaterialTheme.typography.caption,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis)
+        }, style = MaterialTheme.typography.caption, maxLines = 1, overflow = TextOverflow.Ellipsis)
 
         IconButton(onClick = {
 
