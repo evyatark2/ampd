@@ -500,9 +500,11 @@ fun Main(connectionFlow: StateFlow<ConnectionState>,
                     }
 
                     is Screen.AlbumScreen -> {
+                        val expandedHeight = 372.dp
+                        val redactedHeight = 56.dp
                         var scrollOffset by remember { mutableStateOf(0f) }
 
-                        val heightDifference = (372 - 56).dp // Difference between the expanded and redacted state
+                        val heightDifference = expandedHeight - redactedHeight
 
                         val minOffset = with(LocalDensity.current) {
                             -heightDifference.toPx()
@@ -520,7 +522,7 @@ fun Main(connectionFlow: StateFlow<ConnectionState>,
                         Box(Modifier.fillMaxSize().nestedScroll(nestedScrollConnection)) {
                             val offset = max(minOffset, scrollOffset)
                             val offsetProgress = min(0f, offset * 3f - minOffset * 2f) / (minOffset)
-                            TopAppBar(Modifier.fillMaxWidth().offset { IntOffset(0, offset.roundToInt()) }.height(372.dp),
+                            TopAppBar(Modifier.fillMaxWidth().offset { IntOffset(0, offset.roundToInt()) }.height(expandedHeight),
                                 elevation = if (offset <= minOffset) 4.dp else 0.dp,
                                 contentPadding = PaddingValues()) {
                                 Box(Modifier.fillMaxSize()) {
@@ -538,7 +540,7 @@ fun Main(connectionFlow: StateFlow<ConnectionState>,
                             }
                             val tracks = screen.tracks.collectAsState().value
                             if (tracks != null) {
-                                LazyColumn(Modifier.fillMaxSize().padding(top = 56.dp), contentPadding = PaddingValues(top = (372 - 56).dp)) {
+                                LazyColumn(Modifier.fillMaxSize().padding(top = redactedHeight), contentPadding = PaddingValues(top = heightDifference)) {
                                     items(tracks!!.size) { i ->
                                         TrackView(tracks!![i].second, Modifier.clickable {
                                             setPlaylist(tracks!!.map { it.first }, i)
