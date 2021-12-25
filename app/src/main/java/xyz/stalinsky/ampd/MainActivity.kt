@@ -458,6 +458,11 @@ fun Main(connectionFlow: StateFlow<ConnectionState>,
                     is Screen.ArtistScreen -> Column {
                         TopAppBar(title = {
                             Text(screen.artistName)
+                        }, navigationIcon = {
+                            IconButton(onBackPressed) {
+                                Icon(Icons.Default.ArrowBack, "")
+                            }
+
                         }, actions = {
                             var expanded by remember { mutableStateOf(false) }
 
@@ -525,10 +530,15 @@ fun Main(connectionFlow: StateFlow<ConnectionState>,
                                     Text(screen.albumTitle,
                                         Modifier.align(Alignment.BottomStart)
                                             .paddingFromBaseline(bottom = 20.dp)
-                                            .padding(start = (16 + 72 * offsetProgress).dp)
+                                            .padding(start = (16 + 56 * offsetProgress).dp)
                                             .alpha(offsetProgress),
                                         style = MaterialTheme.typography.h6)
+
                                 }
+                            }
+
+                            IconButton(onBackPressed, Modifier.padding(16.dp).size(24.dp)) {
+                                Icon(Icons.Default.ArrowBack, "")
                             }
 
                             val tracks = screen.tracks.collectAsState().value
