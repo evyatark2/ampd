@@ -13,9 +13,13 @@ import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.compose.animation.*
 import androidx.compose.animation.core.*
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.LocalOverScrollConfiguration
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.*
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
@@ -23,10 +27,6 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
-import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
-import androidx.compose.ui.input.nestedscroll.NestedScrollSource
-import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
@@ -133,7 +133,7 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    @OptIn(ExperimentalMaterialApi::class, ExperimentalPagerApi::class, ExperimentalAnimationApi::class)
+    @OptIn(ExperimentalMaterialApi::class, ExperimentalPagerApi::class, ExperimentalAnimationApi::class, ExperimentalFoundationApi::class)
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
@@ -361,6 +361,7 @@ class MainActivity : ComponentActivity() {
     }
 }
 
+@ExperimentalFoundationApi
 @ExperimentalAnimationApi
 @ExperimentalMaterialApi
 @ExperimentalPagerApi
@@ -502,7 +503,6 @@ fun Main(connectionFlow: StateFlow<ConnectionState>,
                     is Screen.AlbumScreen -> {
                         val expandedHeight = 372.dp
                         val redactedHeight = 56.dp
-                        var scrollOffset by remember { mutableStateOf(0f) }
 
                         val heightDifference = expandedHeight - redactedHeight
 
@@ -510,17 +510,10 @@ fun Main(connectionFlow: StateFlow<ConnectionState>,
                             -heightDifference.toPx()
                         }
 
-                        val nestedScrollConnection = remember {
-                            object : NestedScrollConnection {
-                                override fun onPostScroll(consumed: Offset, available: Offset, source: NestedScrollSource): Offset {
-                                    scrollOffset += consumed.y
-                                    return super.onPostScroll(consumed, available, source)
-                                }
-                            }
-                        }
+                        val scrollState = rememberScrollState()
 
-                        Box(Modifier.fillMaxSize().nestedScroll(nestedScrollConnection)) {
-                            val offset = max(minOffset, scrollOffset)
+                        Box(Modifier.fillMaxSize()) {
+                            val offset = max(minOffset, -scrollState.value.toFloat())
                             val offsetProgress = min(0f, offset * 3f - minOffset * 2f) / (minOffset)
                             TopAppBar(Modifier.fillMaxWidth().offset { IntOffset(0, offset.roundToInt()) }.height(expandedHeight),
                                 elevation = if (offset <= minOffset) 4.dp else 0.dp) {
@@ -540,11 +533,14 @@ fun Main(connectionFlow: StateFlow<ConnectionState>,
 
                             val tracks = screen.tracks.collectAsState().value
                             if (tracks != null) {
-                                LazyColumn(Modifier.fillMaxSize().padding(top = redactedHeight), contentPadding = PaddingValues(top = heightDifference)) {
-                                    items(tracks.size) { i ->
-                                        TrackView(tracks[i].second, Modifier.clickable {
-                                            setPlaylist(tracks.map { it.first }, i)
-                                        })
+                                CompositionLocalProvider(LocalOverScrollConfiguration provides null) {
+                                    Column(Modifier.fillMaxSize().padding(top = redactedHeight).verticalScroll(scrollState)) {
+                                        Spacer(Modifier.height(heightDifference))
+                                        tracks.forEachIndexed { i, track ->
+                                            TrackView(track.second, Modifier.clickable {
+                                                setPlaylist(tracks.map { it.first }, i)
+                                            })
+                                        }
                                     }
                                 }
                             } else {
