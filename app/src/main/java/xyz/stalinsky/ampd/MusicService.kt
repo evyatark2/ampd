@@ -596,6 +596,7 @@ class MpdTimeoutInhibitor(private val channel: SocketChannel) : Closeable {
         val pipeKey = requestPipe.source().register(selector, SelectionKey.OP_READ)
 
         var resultCount = 0
+        var position = 0
         var result: ByteBuffer = ByteBuffer.allocate(0)
 
         var commandLength = 0
@@ -653,18 +654,19 @@ class MpdTimeoutInhibitor(private val channel: SocketChannel) : Closeable {
                         resultCount++ // 1448 is for debugging purposes
                         val newResult = ByteBuffer.allocate(1448 * resultCount)
                         newResult.put(result)
-                        channel.read(newResult)
+                        newResult.position(position)
+                        position += channel.read(newResult)
                         result = newResult
 
-                        if (result[result.position() - 1] != '\n'.code.toByte()) {
+                        if (result[position - 1] != '\n'.code.toByte()) {
                             // If the last character is not a '\n' then surely we didn't read the whole command
                             result.rewind()
                         } else {
                             // Otherwise, check if the last line is an "OK" or an "ACK"; if it's not, wait for more data to arrive
-                            var start = result.position() - 1
+                            var start = position - 1
                             while (start != 0 && result[start - 1] != '\n'.code.toByte()) start--
 
-                            val end = result.position() - 1
+                            val end = position - 1
                             val line = ByteArray(end - start) { 0 }
                             result.position(start)
                             result.get(line, 0, end - start)
@@ -672,7 +674,7 @@ class MpdTimeoutInhibitor(private val channel: SocketChannel) : Closeable {
 
                             val lineString = line.toString(Charsets.UTF_8)
                             if (lineString == "OK" || lineString.startsWith("ACK")) {
-                                if (idle) { // If we disabled pipe read, then enable it here
+                                if (idle) { // If we disabled pipe read in line 592, then re-enable it here
                                     pipeKey.interestOps(SelectionKey.OP_READ)
                                 } else {
                                     if (!shouldDrain) {
@@ -688,6 +690,8 @@ class MpdTimeoutInhibitor(private val channel: SocketChannel) : Closeable {
 
                                     key.interestOps(SelectionKey.OP_WRITE)
                                 }
+
+                                position = 0
                             } else {
                                 result.rewind()
                             }
