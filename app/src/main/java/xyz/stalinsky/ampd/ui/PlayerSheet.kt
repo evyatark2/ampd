@@ -116,7 +116,6 @@ fun RedactedPlayer(title: String, artist: String, alpha: Float, playerState: Int
                 IconButton(onClick = onPlayPause, Modifier.constrainAs(buttonConstraint) {
                     end.linkTo(parent.end, 16.dp)
                     top.linkTo(parent.top, 24.dp)
-                    bottom.linkTo(parent.bottom, 24.dp)
 
                     width = Dimension.value(24.dp)
                     height = Dimension.value(24.dp)
