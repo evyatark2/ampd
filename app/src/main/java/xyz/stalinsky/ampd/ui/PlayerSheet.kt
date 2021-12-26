@@ -45,6 +45,15 @@ fun PlayerSheet(enabled: Boolean,
                 modifier: Modifier) {
     val scope = rememberCoroutineScope()
     val threeHundredDp = with(LocalDensity.current) { 300.dp.toPx() }
+
+    if (swipeState.direction < 0f || (swipeState.currentValue && swipeState.direction == 0f)) {
+        BackHandler {
+            scope.launch {
+                swipeState.animateTo(false)
+            }
+        }
+    }
+
     Surface(modifier.swipeable(swipeState, mapOf(0f to false, -threeHundredDp to true), Orientation.Vertical, enabled).clickable(enabled) {
             scope.launch {
                 swipeState.animateTo(!swipeState.currentValue)
@@ -56,12 +65,6 @@ fun PlayerSheet(enabled: Boolean,
             }
             when {
                 swipeState.direction != 0f -> {
-                    BackHandler {
-                        scope.launch {
-                            swipeState.animateTo(false)
-                        }
-                    }
-
                     if (currentItem.first != -1) {
                         RedactedPlayer(playlist[currentItem.first].second.title,
                             playlist[currentItem.first].second.artist,
@@ -83,11 +86,6 @@ fun PlayerSheet(enabled: Boolean,
                     }
                 }
                 swipeState.currentValue -> {
-                    BackHandler {
-                        scope.launch {
-                            swipeState.animateTo(false)
-                        }
-                    }
 
                     if (currentItem.first != -1) {
                         ExpandedPlayer(playlist[currentItem.first].second.title,
