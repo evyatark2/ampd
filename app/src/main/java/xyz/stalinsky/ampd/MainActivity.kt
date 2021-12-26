@@ -35,6 +35,7 @@ import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.constraintlayout.compose.ConstraintLayout
 import androidx.constraintlayout.compose.Dimension
+import androidx.lifecycle.coroutineScope
 import androidx.media2.common.MediaItem
 import androidx.media2.common.MediaMetadata
 import androidx.media2.common.SessionPlayer
@@ -52,6 +53,8 @@ import com.google.accompanist.pager.rememberPagerState
 import com.google.common.util.concurrent.FutureCallback
 import com.google.common.util.concurrent.Futures
 import com.skydoves.landscapist.glide.GlideImage
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
@@ -66,7 +69,13 @@ import kotlin.math.roundToInt
 class MainActivity : ComponentActivity() {
     private val executor = Executors.newSingleThreadExecutor()
 
-    private val playingState: MutableStateFlow<Int> = MutableStateFlow(SessionPlayer.PLAYER_STATE_IDLE)
+    private val playingState = MutableStateFlow(SessionPlayer.PLAYER_STATE_IDLE)
+
+    private var updateSongProgressJob: Job? = null
+    private val progressState = MutableStateFlow(0L)
+
+    private var updateBufferedProgressJob: Job? = null
+    private val bufferedState = MutableStateFlow(0L)
 
     @ExperimentalMaterialApi
     private val playlistState: MutableStateFlow<List<Pair<String, Song>>> = MutableStateFlow(listOf())
@@ -157,19 +166,34 @@ class MainActivity : ComponentActivity() {
                         if (screen is Screen.AlbumScreen) controller.unsubscribe(screen.id)
 
                         screenState.value = backstack.pop()
-                    }, screenState, PlayerState(playingState, playlistState, currentItemState), { playlist, index ->
+                    }, screenState, PlayerState(playingState, playlistState, currentItemState, progressState, bufferedState), { playlist, index ->
                         controller.setPlaylist(playlist, null).addListener({
                             controller.skipToPlaylistItem(index).addListener({
-                                if (controller.playerState == SessionPlayer.PLAYER_STATE_IDLE) controller.prepare().addListener({
+                                if (controller.playerState == SessionPlayer.PLAYER_STATE_IDLE) {
+                                    controller.prepare().addListener({
+                                        controller.play()
+                                    }, executor)
+                                } else if (controller.playerState == SessionPlayer.PLAYER_STATE_PAUSED) {
                                     controller.play()
-                                }, executor)
-                                else if (controller.playerState == SessionPlayer.PLAYER_STATE_PAUSED) controller.play()
+                                }
                             }, executor)
                         }, executor)
                     }, {
                         if (playingState.value == SessionPlayer.PLAYER_STATE_PAUSED) controller.play()
                         else if (playingState.value == SessionPlayer.PLAYER_STATE_PLAYING) controller.pause()
-                    }, { controller.skipToPreviousPlaylistItem() }, { controller.skipToNextPlaylistItem() }) {
+                    }, { controller.skipToPreviousPlaylistItem() }, { controller.skipToNextPlaylistItem() }, {
+                        updateSongProgressJob?.cancel()
+                        updateSongProgressJob = null
+                        progressState.value = it
+                        controller.seekTo(it).addListener({
+                            updateSongProgressJob = lifecycle.coroutineScope.launch {
+                                while (true) {
+                                    delay(50)
+                                    progressState.value = controller.currentPosition
+                                }
+                            }
+                        }, executor)
+                    }) {
                         startActivity(Intent(this, SettingsActivity::class.java))
                     }
                 }
@@ -196,6 +220,7 @@ class MainActivity : ComponentActivity() {
                         it.metadata?.getString(MediaMetadata.METADATA_KEY_ARTIST)!!,
                         it.metadata?.extras?.getString(MusicService.METADATA_EXTRA_ALBUM_ID)!!,
                         it.metadata?.getString(MediaMetadata.METADATA_KEY_ALBUM)!!,
+                        it.metadata?.getLong(MediaMetadata.METADATA_KEY_DURATION)!!,
                         it.metadata?.getString((MediaMetadata.METADATA_KEY_ALBUM_ART_URI))))
             } ?: listOf()
 
@@ -234,6 +259,7 @@ class MainActivity : ComponentActivity() {
 
             val uri = item?.metadata?.getString(MediaMetadata.METADATA_KEY_ALBUM_ART_URI)
 
+            // Load the current media item's album art
             Glide.with(this@MainActivity).asBitmap().load(if (uri != null) Uri.parse(uri) else null).into(object : CustomTarget<Bitmap>() {
                 override fun onResourceReady(resource: Bitmap, transition: Transition<in Bitmap>?) {
                     currentItemState.value = Pair(currentItemState.value.first, resource)
@@ -262,13 +288,54 @@ class MainActivity : ComponentActivity() {
                         it.metadata?.getString(MediaMetadata.METADATA_KEY_ARTIST)!!,
                         it.metadata?.extras?.getString(MusicService.METADATA_EXTRA_ALBUM_ID)!!,
                         it.metadata?.getString(MediaMetadata.METADATA_KEY_ALBUM)!!,
+                        it.metadata?.getLong(MediaMetadata.METADATA_KEY_DURATION)!!,
                         it.metadata?.getString((MediaMetadata.METADATA_KEY_ALBUM_ART_URI))))
             } ?: listOf()
         }
 
         override fun onPlayerStateChanged(controller: MediaController, state: Int) {
+            when (state) {
+                SessionPlayer.PLAYER_STATE_PAUSED -> {
+                    if (playingState.value == SessionPlayer.PLAYER_STATE_PLAYING) {
+                        updateSongProgressJob?.cancel()
+                        updateSongProgressJob = null
+                    }
+                }
+
+                SessionPlayer.PLAYER_STATE_PLAYING -> {
+                    updateSongProgressJob = lifecycle.coroutineScope.launch {
+                        while (true) {
+                            delay(50)
+                            progressState.value = controller.currentPosition
+                        }
+                    }
+                }
+            }
+
             playingState.value = state
         }
+
+        private var state = SessionPlayer.BUFFERING_STATE_UNKNOWN
+
+        override fun onBufferingStateChanged(controller: MediaController, item: MediaItem, state: Int) {
+            if ((state == SessionPlayer.BUFFERING_STATE_BUFFERING_AND_PLAYABLE || state == SessionPlayer.BUFFERING_STATE_BUFFERING_AND_STARVED) && (this.state != SessionPlayer.BUFFERING_STATE_BUFFERING_AND_PLAYABLE && this.state != SessionPlayer.BUFFERING_STATE_BUFFERING_AND_STARVED)) {
+                updateBufferedProgressJob = lifecycle.coroutineScope.launch {
+                    while (true) {
+                        delay(50)
+                        bufferedState.value = controller.bufferedPosition
+                    }
+                }
+            } else if (state == SessionPlayer.BUFFERING_STATE_COMPLETE && (this.state == SessionPlayer.BUFFERING_STATE_BUFFERING_AND_PLAYABLE || this.state == SessionPlayer.BUFFERING_STATE_BUFFERING_AND_STARVED)) {
+                updateBufferedProgressJob?.cancel()
+                updateBufferedProgressJob = null
+            }
+
+            this.state = state
+
+            Log.i("MainActivity", "BUFFER: $state")
+            if (state == SessionPlayer.BUFFERING_STATE_COMPLETE) Log.i("MainActivity", "BUFFERED!")
+        }
+
 
         override fun onChildrenChanged(browser: MediaBrowser, parentId: String, itemCount: Int, params: MediaLibraryService.LibraryParams?) {
             when {
@@ -336,6 +403,7 @@ class MainActivity : ComponentActivity() {
                                 it.metadata?.getString(MediaMetadata.METADATA_KEY_ARTIST)!!,
                                 it.metadata?.extras?.getString(MusicService.METADATA_EXTRA_ALBUM_ID)!!,
                                 it.metadata?.getString(MediaMetadata.METADATA_KEY_ALBUM)!!,
+                                it.metadata?.getLong(MediaMetadata.METADATA_KEY_DURATION)!!,
                                 it.metadata?.getString(MediaMetadata.METADATA_KEY_ALBUM_ART_URI)))
                     }
 
@@ -367,14 +435,15 @@ class MainActivity : ComponentActivity() {
 @ExperimentalPagerApi
 @Composable
 fun Main(connectionFlow: StateFlow<ConnectionState>,
-    onBackPressed: () -> Unit,
-    screenFlow: StateFlow<Screen>,
-    playerState: PlayerState,
-    setPlaylist: (List<String>, Int) -> Unit,
-    onPlayPause: () -> Unit,
-    onPrev: () -> Unit,
-    onNext: () -> Unit,
-    onSettings: () -> Unit) {
+         onBackPressed: () -> Unit,
+         screenFlow: StateFlow<Screen>,
+         playerState: PlayerState,
+         setPlaylist: (List<String>, Int) -> Unit,
+         onPlayPause: () -> Unit,
+         onPrev: () -> Unit,
+         onNext: () -> Unit,
+         onSeek: (Long) -> Unit,
+         onSettings: () -> Unit) {
     val screen = screenFlow.collectAsState().value
     if (screen !is Screen.MainScreen) BackHandler(true, onBackPressed)
 
@@ -569,14 +638,18 @@ fun Main(connectionFlow: StateFlow<ConnectionState>,
                 modifier = Modifier.align(Alignment.BottomCenter)) {
                 val playlist by playerState.playlist.collectAsState()
                 val current by playerState.current.collectAsState()
+                val progress by playerState.progress.collectAsState()
+                //val duration by playerState.duration.collectAsState()
                 PlayerSheet(playerVisible,
                     playingState,
                     playlist,
                     current,
+                    progress,
                     swipeState,
                     onPrev,
                     onPlayPause,
                     onNext,
+                    onSeek,
                     modifier = Modifier.height(playerHeight.value - swipeOffsetDp))
             }
         }
@@ -677,14 +750,18 @@ sealed interface Screen {
     class MainScreen(val categories: StateFlow<Map<String, Pair<String, StateFlow<List<@Composable () -> Unit>?>>>?>) : Screen
 
     class ArtistScreen(val id: String,
-        val artistName: String,
-        val albums: StateFlow<List<Pair<String, Album>>?>,
-        val songs: StateFlow<List<Pair<String, Song>>?>) : Screen
+                       val artistName: String,
+                       val albums: StateFlow<List<Pair<String, Album>>?>,
+                       val songs: StateFlow<List<Pair<String, Song>>?>) : Screen
 
     class AlbumScreen(val id: String, val albumTitle: String, val art: String?, val tracks: StateFlow<List<Pair<String, Track>>?>) : Screen
 }
 
-data class PlayerState(val state: StateFlow<Int>, val playlist: StateFlow<List<Pair<String, Song>>>, val current: StateFlow<Pair<Int, Bitmap?>>)
+data class PlayerState(val state: StateFlow<Int>,
+                       val playlist: StateFlow<List<Pair<String, Song>>>,
+                       val current: StateFlow<Pair<Int, Bitmap?>>,
+                       val progress: StateFlow<Long>,
+                       val buffered: StateFlow<Long>)
 
 enum class ConnectionState {
     CONNECTING, CONNECTED, ERROR

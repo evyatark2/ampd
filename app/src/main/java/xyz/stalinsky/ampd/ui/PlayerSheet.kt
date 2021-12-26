@@ -10,8 +10,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.material.*
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.List
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.graphics.Color
@@ -31,6 +30,7 @@ import androidx.palette.graphics.Palette
 import kotlinx.coroutines.launch
 import xyz.stalinsky.ampd.R
 import xyz.stalinsky.ampd.Song
+import kotlin.math.roundToLong
 
 @ExperimentalMaterialApi
 @Composable
@@ -38,10 +38,12 @@ fun PlayerSheet(enabled: Boolean,
                 state: Int,
                 playlist: List<Pair<String, Song>>,
                 currentItem: Pair<Int, Bitmap?>,
+                progress: Long,
                 swipeState: SwipeableState<Boolean>,
                 onPrev: () -> Unit,
                 onPlayPause: () -> Unit,
                 onNext: () -> Unit,
+                onSeek: (Long) -> Unit,
                 modifier: Modifier) {
     val scope = rememberCoroutineScope()
     val threeHundredDp = with(LocalDensity.current) { 300.dp.toPx() }
@@ -55,10 +57,10 @@ fun PlayerSheet(enabled: Boolean,
     }
 
     Surface(modifier.swipeable(swipeState, mapOf(0f to false, -threeHundredDp to true), Orientation.Vertical, enabled).clickable(enabled) {
-            scope.launch {
-                swipeState.animateTo(!swipeState.currentValue)
-            }
-        }, elevation = 4.dp) {
+        scope.launch {
+            swipeState.animateTo(!swipeState.currentValue)
+        }
+    }, elevation = 4.dp) {
         Box(Modifier.fillMaxSize()) {
             val palette = currentItem.second?.let {
                 Palette.from(it).generate()
@@ -67,14 +69,10 @@ fun PlayerSheet(enabled: Boolean,
             val currentItemIndex = currentItem.first
             val title = if (currentItemIndex != -1) playlist[currentItemIndex].second.title else ""
             val artist = if (currentItemIndex != -1) playlist[currentItemIndex].second.title else ""
+            val duration = if (currentItemIndex != -1) playlist[currentItemIndex].second.duration else 0
 
             if (swipeState.direction != 0f || !swipeState.currentValue) {
-                RedactedPlayer(title,
-                    artist,
-                    1 + swipeState.offset.value / threeHundredDp,
-                    state,
-                    Color(palette?.getDarkVibrantColor(0) ?: 0),
-                    onPlayPause)
+                RedactedPlayer(title, artist, 1 + swipeState.offset.value / threeHundredDp, state, Color(palette?.getDarkVibrantColor(0) ?: 0), onPlayPause)
             }
 
             if (swipeState.direction != 0f || swipeState.currentValue) {
@@ -83,9 +81,12 @@ fun PlayerSheet(enabled: Boolean,
                     currentItem.second,
                     -swipeState.offset.value / threeHundredDp,
                     state,
+                    progress,
+                    duration,
                     onPrev,
                     onPlayPause,
-                    onNext)
+                    onNext,
+                    onSeek)
             }
         }
     }
@@ -120,10 +121,8 @@ fun RedactedPlayer(title: String, artist: String, alpha: Float, playerState: Int
                     width = Dimension.value(24.dp)
                     height = Dimension.value(24.dp)
                 }) {
-                    if(playerState == SessionPlayer.PLAYER_STATE_PAUSED)
-                        Icon(ImageVector.vectorResource(R.drawable.baseline_play_arrow_black_24dp), "Play")
-                    else
-                        Icon(ImageVector.vectorResource(R.drawable.baseline_pause_black_24dp), "Pause")
+                    if (playerState == SessionPlayer.PLAYER_STATE_PAUSED) Icon(ImageVector.vectorResource(R.drawable.baseline_play_arrow_black_24dp), "Play")
+                    else Icon(ImageVector.vectorResource(R.drawable.baseline_pause_black_24dp), "Pause")
 
                 }
             }
@@ -137,12 +136,15 @@ fun ExpandedPlayer(title: String,
                    art: Bitmap?,
                    alpha: Float,
                    playerState: Int,
+                   progress: Long,
+                   duration: Long,
                    onPrev: () -> Unit,
                    onPlayPause: () -> Unit,
-                   onNext: () -> Unit) {
+                   onNext: () -> Unit,
+                   onSeek: (Long) -> Unit) {
     if (alpha > 0f) {
         ConstraintLayout(Modifier.fillMaxWidth().height(372.dp).alpha(alpha)) {
-            val (imageConstraint, titleConstraint, artistConstraint, playlistButtonConstraint, backConstraint, playConstraint, forwardConstraint) = createRefs()
+            val (imageConstraint, titleConstraint, artistConstraint, seekBarConstraint, playlistButtonConstraint, backConstraint, playConstraint, forwardConstraint) = createRefs()
 
             val painter = if (art != null) {
                 BitmapPainter(art.asImageBitmap())
@@ -167,10 +169,16 @@ fun ExpandedPlayer(title: String,
             }, style = MaterialTheme.typography.h6)
 
             Text(artist, Modifier.constrainAs(artistConstraint) {
-                bottom.linkTo(playConstraint.top, 16.dp)
+                bottom.linkTo(seekBarConstraint.top, 16.dp)
                 start.linkTo(parent.start)
                 end.linkTo(parent.end)
             }, style = MaterialTheme.typography.subtitle1)
+
+            SeekBar(progress = progress, buffered = 0, max = duration, onSeek = onSeek, Modifier.constrainAs(seekBarConstraint) {
+                bottom.linkTo(playConstraint.top, 16.dp)
+                start.linkTo(parent.start, 16.dp)
+                end.linkTo(parent.end, 16.dp)
+            })
 
             IconButton(onClick = { /*TODO*/ }, Modifier.constrainAs(playlistButtonConstraint) {
                 top.linkTo(parent.top, 24.dp)
@@ -199,10 +207,8 @@ fun ExpandedPlayer(title: String,
                 width = Dimension.value(24.dp)
                 height = Dimension.value(24.dp)
             }) {
-                if (playerState == SessionPlayer.PLAYER_STATE_PAUSED)
-                    Icon(ImageVector.vectorResource(R.drawable.baseline_play_arrow_black_24dp), "Play")
-                else
-                    Icon(ImageVector.vectorResource(R.drawable.baseline_pause_black_24dp), "Pause")
+                if (playerState == SessionPlayer.PLAYER_STATE_PAUSED) Icon(ImageVector.vectorResource(R.drawable.baseline_play_arrow_black_24dp), "Play")
+                else Icon(ImageVector.vectorResource(R.drawable.baseline_pause_black_24dp), "Pause")
             }
 
             IconButton(onClick = onNext, Modifier.constrainAs(forwardConstraint) {
@@ -216,4 +222,27 @@ fun ExpandedPlayer(title: String,
             }
         }
     }
+}
+
+
+/**
+ * @param progress The current progress of the bar
+ * @param buffered The current buffered progress of the bar
+ * @param max The maximum value the bar can hold
+ * @param onSeek Will be called when the user requests a seek
+ */
+@Composable
+fun SeekBar(progress: Long, buffered: Long, max: Long, onSeek: (Long) -> Unit, modifier: Modifier = Modifier) {
+    var isTapping by remember { mutableStateOf(false) }
+    var tapProgress by remember { mutableStateOf(0f) }
+    Slider(value = if (!isTapping) progress.toFloat() / max else tapProgress, onValueChange = {
+        if (!isTapping) {
+            isTapping = true
+        }
+
+        tapProgress = it
+    }, modifier, onValueChangeFinished = {
+        onSeek((tapProgress * max).roundToLong())
+        isTapping = false
+    })
 }
