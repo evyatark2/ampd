@@ -63,55 +63,29 @@ fun PlayerSheet(enabled: Boolean,
             val palette = currentItem.second?.let {
                 Palette.from(it).generate()
             }
-            when {
-                swipeState.direction != 0f -> {
-                    if (currentItem.first != -1) {
-                        RedactedPlayer(playlist[currentItem.first].second.title,
-                            playlist[currentItem.first].second.artist,
-                            1 + swipeState.offset.value / threeHundredDp,
-                            state,
-                            Color(palette?.getDarkVibrantColor(0) ?: 0),
-                            onPlayPause)
-                        ExpandedPlayer(playlist[currentItem.first].second.title,
-                            playlist[currentItem.first].second.artist,
-                            currentItem.second,
-                            -swipeState.offset.value / threeHundredDp,
-                            state,
-                            onPrev,
-                            onPlayPause,
-                            onNext)
-                    } else {
-                        RedactedPlayer("", "", 1 + swipeState.offset.value / threeHundredDp, state, Color(palette?.getDarkVibrantColor(0) ?: 0), onPlayPause)
-                        ExpandedPlayer("", "", null, -swipeState.offset.value / threeHundredDp, state, onPrev, onPlayPause, onNext)
-                    }
-                }
-                swipeState.currentValue -> {
 
-                    if (currentItem.first != -1) {
-                        ExpandedPlayer(playlist[currentItem.first].second.title,
-                            playlist[currentItem.first].second.artist,
-                            currentItem.second,
-                            1f,
-                            state,
-                            onPrev,
-                            onPlayPause,
-                            onNext)
-                    } else {
-                        ExpandedPlayer("", "", null, 1f, state, onPrev, onPlayPause, onNext)
-                    }
-                }
-                else -> {
-                    if (currentItem.first != -1) {
-                        RedactedPlayer(playlist[currentItem.first].second.title,
-                            playlist[currentItem.first].second.artist,
-                            1f,
-                            state,
-                            Color(palette?.getDarkVibrantColor(0) ?: 0),
-                            onPlayPause)
-                    } else {
-                        RedactedPlayer("", "", 1f, state, Color(palette?.getDarkVibrantColor(0) ?: 0), onPlayPause)
-                    }
-                }
+            val currentItemIndex = currentItem.first
+            val title = if (currentItemIndex != -1) playlist[currentItemIndex].second.title else ""
+            val artist = if (currentItemIndex != -1) playlist[currentItemIndex].second.title else ""
+
+            if (swipeState.direction != 0f || !swipeState.currentValue) {
+                RedactedPlayer(title,
+                    artist,
+                    1 + swipeState.offset.value / threeHundredDp,
+                    state,
+                    Color(palette?.getDarkVibrantColor(0) ?: 0),
+                    onPlayPause)
+            }
+
+            if (swipeState.direction != 0f || swipeState.currentValue) {
+                ExpandedPlayer(title,
+                    artist,
+                    currentItem.second,
+                    -swipeState.offset.value / threeHundredDp,
+                    state,
+                    onPrev,
+                    onPlayPause,
+                    onNext)
             }
         }
     }
