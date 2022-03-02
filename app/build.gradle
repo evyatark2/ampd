@@ -38,7 +38,7 @@ android {
     }
     composeOptions {
         kotlinCompilerExtensionVersion compose_version
-        kotlinCompilerVersion '1.6.0'
+        kotlinCompilerVersion '1.6.10'
     }
     packagingOptions {
         resources {
@@ -63,9 +63,9 @@ dependencies {
     implementation "androidx.media2:media2-session:$media2_version"
     implementation "com.google.guava:guava:31.0.1-android"
     implementation "com.squareup.okhttp3:okhttp:4.9.3"
-    implementation 'com.google.android.exoplayer:exoplayer-core:2.16.1'
-    implementation 'com.google.android.exoplayer:extension-media2:2.16.1'
-    implementation 'com.google.android.exoplayer:extension-okhttp:2.16.1'
+    implementation 'com.google.android.exoplayer:exoplayer-core:2.17.0'
+    implementation 'com.google.android.exoplayer:extension-media2:2.17.0'
+    implementation 'com.google.android.exoplayer:extension-okhttp:2.17.0'
     implementation "com.android.support:palette-v7:31.0.0"
     implementation "com.github.skydoves:landscapist-glide:1.4.4"
     implementation 'androidx.preference:preference-ktx:1.2.0'
