@@ -1,9 +1,7 @@
 package xyz.stalinsky.ampd
 
 import android.os.Bundle
-import android.util.Log
 import androidx.appcompat.app.AppCompatActivity
-import androidx.preference.Preference
 import androidx.preference.PreferenceFragmentCompat
 
 class SettingsActivity : AppCompatActivity() {
@@ -23,10 +21,6 @@ class SettingsActivity : AppCompatActivity() {
     class SettingsFragment : PreferenceFragmentCompat() {
         override fun onCreatePreferences(savedInstanceState: Bundle?, rootKey: String?) {
             setPreferencesFromResource(R.xml.root_preferences, rootKey)
-        }
-
-        override fun onDisplayPreferenceDialog(preference: Preference?) {
-            super.onDisplayPreferenceDialog(preference)
         }
     }
 }
