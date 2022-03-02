@@ -9,17 +9,7 @@ import androidx.media2.session.*
 import com.google.android.exoplayer2.C
 import com.google.android.exoplayer2.ExoPlayer
 import com.google.android.exoplayer2.audio.AudioAttributes
-import com.google.android.exoplayer2.drm.DrmSessionManager
-import com.google.android.exoplayer2.drm.DrmSessionManagerProvider
 import com.google.android.exoplayer2.ext.media2.SessionPlayerConnector
-import com.google.android.exoplayer2.ext.okhttp.OkHttpDataSource
-import com.google.android.exoplayer2.source.MediaSourceFactory
-import com.google.android.exoplayer2.source.ProgressiveMediaSource
-import com.google.android.exoplayer2.upstream.HttpDataSource
-import com.google.android.exoplayer2.upstream.LoadErrorHandlingPolicy
-import okhttp3.Cache
-import okhttp3.OkHttpClient
-import okhttp3.Request
 import java.io.BufferedReader
 import java.io.Closeable
 import java.io.StringReader
@@ -43,43 +33,9 @@ class MusicService : MediaLibraryService() {
     override fun onCreate() {
         super.onCreate()
 
-        val connection = OkHttpClient.Builder().cache(Cache(cacheDir, 24 * 1024 * 1024)) // 256 MiB
-            .build()
-
         session = MediaLibrarySession.Builder(this,
             SessionPlayerConnector(ExoPlayer.Builder(this)
                 .setAudioAttributes(AudioAttributes.Builder().setContentType(C.CONTENT_TYPE_MUSIC).setUsage(C.USAGE_MEDIA).build(), true)
-                .setMediaSourceFactory(object : MediaSourceFactory {
-                    override fun setDrmSessionManagerProvider(drmSessionManagerProvider: DrmSessionManagerProvider?): MediaSourceFactory {
-                        TODO("Not yet implemented")
-                    }
-
-                    override fun setDrmSessionManager(drmSessionManager: DrmSessionManager?): MediaSourceFactory {
-                        TODO("Not yet implemented")
-                    }
-
-                    override fun setDrmHttpDataSourceFactory(drmHttpDataSourceFactory: HttpDataSource.Factory?): MediaSourceFactory {
-                        TODO("Not yet implemented")
-                    }
-
-                    override fun setDrmUserAgent(userAgent: String?): MediaSourceFactory {
-                        TODO("Not yet implemented")
-                    }
-
-                    override fun setLoadErrorHandlingPolicy(loadErrorHandlingPolicy: LoadErrorHandlingPolicy?): MediaSourceFactory {
-                        TODO("Not yet implemented")
-                    }
-
-                    override fun getSupportedTypes(): IntArray {
-                        TODO("Not yet implemented")
-                    }
-
-                    override fun createMediaSource(mediaItem: com.google.android.exoplayer2.MediaItem) =
-                        ProgressiveMediaSource.Factory(OkHttpDataSource.Factory {
-                            connection.newCall(Request.Builder().url(it.url).build())
-                        }).createMediaSource(mediaItem)
-
-                })
                 .build()),
             executor,
             Callback()).build()
