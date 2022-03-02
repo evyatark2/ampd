@@ -1,5 +1,10 @@
 package xyz.stalinsky.ampd
 
+/*
+    TODO: Remove all the SuppressLint annotations once SessionResult results are made public
+ */
+
+import android.annotation.SuppressLint
 import android.net.Uri
 import android.os.Bundle
 import androidx.media2.common.MediaItem
@@ -72,10 +77,11 @@ class MusicService : MediaLibraryService() {
                 .build()
         }
 
+        @SuppressLint("RestrictedApi")
         override fun onCustomCommand(session: MediaSession,
-            controller: MediaSession.ControllerInfo,
-            customCommand: SessionCommand,
-            args: Bundle?): SessionResult {
+                                     controller: MediaSession.ControllerInfo,
+                                     customCommand: SessionCommand,
+                                     args: Bundle?): SessionResult {
             when (customCommand) {
                 COMMAND_MPD_CONNECT -> {
                     if (connected) {
@@ -144,6 +150,7 @@ class MusicService : MediaLibraryService() {
                 .build()
         }
 
+        @SuppressLint("RestrictedApi")
         override fun onSubscribe(session: MediaLibrarySession, controller: MediaSession.ControllerInfo, parentId: String, params: LibraryParams?): Int {
             if (parentId.startsWith("/artists/") || parentId.startsWith("/albums/")) clients[controller]!!.push(Pair(parentId, mutableMapOf()))
 
@@ -152,6 +159,7 @@ class MusicService : MediaLibraryService() {
             return LibraryResult.RESULT_SUCCESS
         }
 
+        @SuppressLint("RestrictedApi")
         override fun onUnsubscribe(session: MediaLibrarySession, controller: MediaSession.ControllerInfo, parentId: String): Int {
             if (!clients[controller]!!.empty() && clients[controller]!!.peek().first != parentId) return LibraryResult.RESULT_ERROR_BAD_VALUE
 
@@ -160,6 +168,7 @@ class MusicService : MediaLibraryService() {
             return LibraryResult.RESULT_SUCCESS
         }
 
+        @SuppressLint("RestrictedApi")
         override fun onGetLibraryRoot(session: MediaLibrarySession, controller: MediaSession.ControllerInfo, params: LibraryParams?): LibraryResult {
             if (mediaLibrary == null) return LibraryResult(LibraryResult.RESULT_ERROR_INVALID_STATE)
 
@@ -174,12 +183,13 @@ class MusicService : MediaLibraryService() {
                 params)
         }
 
+        @SuppressLint("RestrictedApi")
         override fun onGetChildren(session: MediaLibrarySession,
-            controller: MediaSession.ControllerInfo,
-            parentId: String,
-            page: Int,
-            pageSize: Int,
-            params: LibraryParams?): LibraryResult {
+                                   controller: MediaSession.ControllerInfo,
+                                   parentId: String,
+                                   page: Int,
+                                   pageSize: Int,
+                                   params: LibraryParams?): LibraryResult {
             if (!clients[controller]!!.empty() && clients[controller]!!.peek()?.first != parentId) return LibraryResult(LibraryResult.RESULT_ERROR_INVALID_STATE)
 
             when {
