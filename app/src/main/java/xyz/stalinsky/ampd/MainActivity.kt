@@ -13,7 +13,6 @@ import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.compose.animation.*
 import androidx.compose.animation.core.*
-import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.LocalOverScrollConfiguration
 import androidx.compose.foundation.layout.*
@@ -50,8 +49,6 @@ import com.google.accompanist.pager.ExperimentalPagerApi
 import com.google.accompanist.pager.HorizontalPager
 import com.google.accompanist.pager.pagerTabIndicatorOffset
 import com.google.accompanist.pager.rememberPagerState
-import com.google.common.util.concurrent.FutureCallback
-import com.google.common.util.concurrent.Futures
 import com.skydoves.landscapist.glide.GlideImage
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -60,7 +57,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
 import xyz.stalinsky.ampd.ui.PlayerSheet
 import xyz.stalinsky.ampd.ui.theme.AMPDTheme
-import java.util.*
+import java.util.Stack
 import java.util.concurrent.Executors
 import kotlin.math.max
 import kotlin.math.min
@@ -77,7 +74,6 @@ class MainActivity : ComponentActivity() {
     private var updateBufferedProgressJob: Job? = null
     private val bufferedState = MutableStateFlow(0L)
 
-    @ExperimentalMaterialApi
     private val playlistState: MutableStateFlow<List<Pair<String, Song>>> = MutableStateFlow(listOf())
     private val currentItemState: MutableStateFlow<Pair<Int, Bitmap?>> = MutableStateFlow(Pair(-1, null))
 
@@ -92,8 +88,7 @@ class MainActivity : ComponentActivity() {
 
     private val connectionState = MutableStateFlow(MusicService.ConnectionState.DISCONNECTED)
 
-    // For some reason if I don't put 'java.util' the compiler doesn't find Stack
-    private val backstack = java.util.Stack<Screen>()
+    private val backstack = Stack<Screen>()
     private val screenState: MutableStateFlow<Screen> = MutableStateFlow(Screen.MainScreen(categories))
 
     private var mpdHost = ""
@@ -130,7 +125,6 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    @OptIn(ExperimentalMaterialApi::class, ExperimentalPagerApi::class, ExperimentalAnimationApi::class, ExperimentalFoundationApi::class)
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
@@ -198,7 +192,6 @@ class MainActivity : ComponentActivity() {
     }
 
     inner class Callback : MediaBrowser.BrowserCallback() {
-        @OptIn(ExperimentalMaterialApi::class)
         override fun onConnected(controller: MediaController, allowedCommands: SessionCommandGroup) {
             playingState.value = controller.playerState
             playlistState.value = controller.playlist?.map {
@@ -270,7 +263,6 @@ class MainActivity : ComponentActivity() {
             return SessionResult(SessionResult.RESULT_SUCCESS, null)
         }
 
-        @OptIn(ExperimentalMaterialApi::class)
         override fun onPlaylistChanged(controller: MediaController, list: MutableList<MediaItem>?, metadata: MediaMetadata?) {
             currentItemState.value = Pair(controller.currentMediaItemIndex, null)
 
@@ -422,10 +414,8 @@ class MainActivity : ComponentActivity() {
     }
 }
 
-@ExperimentalFoundationApi
-@ExperimentalAnimationApi
-@ExperimentalMaterialApi
-@ExperimentalPagerApi
+@OptIn(ExperimentalPagerApi::class, androidx.compose.material.ExperimentalMaterialApi::class, androidx.compose.foundation.ExperimentalFoundationApi::class,
+    androidx.compose.animation.ExperimentalAnimationApi::class)
 @Composable
 fun Main(connectionFlow: StateFlow<MusicService.ConnectionState>,
          onBackPressed: () -> Unit,
@@ -643,7 +633,7 @@ fun Main(connectionFlow: StateFlow<MusicService.ConnectionState>,
                     onPlayPause,
                     onNext,
                     onSeek,
-                    modifier = Modifier.height(playerHeight.value - swipeOffsetDp))
+                    Modifier.height(playerHeight.value - swipeOffsetDp))
             }
         }
     }
