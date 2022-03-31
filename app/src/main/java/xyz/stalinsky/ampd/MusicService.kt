@@ -7,6 +7,8 @@ package xyz.stalinsky.ampd
 import android.annotation.SuppressLint
 import android.net.Uri
 import android.os.Bundle
+import android.os.Parcelable
+import android.util.Log
 import androidx.media2.common.MediaItem
 import androidx.media2.common.MediaMetadata
 import androidx.media2.common.UriMediaItem
@@ -15,19 +17,16 @@ import com.google.android.exoplayer2.C
 import com.google.android.exoplayer2.ExoPlayer
 import com.google.android.exoplayer2.audio.AudioAttributes
 import com.google.android.exoplayer2.ext.media2.SessionPlayerConnector
+import kotlinx.parcelize.Parcelize
 import java.io.BufferedReader
 import java.io.Closeable
 import java.io.StringReader
 import java.net.InetSocketAddress
+import java.net.SocketAddress
 import java.nio.ByteBuffer
-import java.nio.channels.Pipe
-import java.nio.channels.SelectionKey
-import java.nio.channels.Selector
-import java.nio.channels.SocketChannel
-import java.nio.charset.StandardCharsets
+import java.nio.channels.*
 import java.util.*
 import java.util.concurrent.Executors
-import java.util.concurrent.LinkedBlockingQueue
 import java.util.concurrent.TimeUnit
 
 class MusicService : MediaLibraryService() {
@@ -49,7 +48,7 @@ class MusicService : MediaLibraryService() {
     override fun onDestroy() {
         super.onDestroy()
 
-        // Player should be closed after the session
+        // SessionPlayer should be closed after the session
         val player = session.player
         session.close()
         player.close()
@@ -60,7 +59,16 @@ class MusicService : MediaLibraryService() {
     override fun onGetSession(controllerInfo: MediaSession.ControllerInfo) = session
 
     class Callback : MediaLibrarySession.MediaLibrarySessionCallback() {
-        private var connected = false
+        private var connectionState = ConnectionState.DISCONNECTED
+        get() {
+            synchronized(field) {
+                return field
+            }
+        }
+
+        private var host: String? = null
+        private var port: Int? = null
+
         private lateinit var timeoutInhibitor: MpdTimeoutInhibitor
 
         private val clients: MutableMap<MediaSession.ControllerInfo, Stack<Pair<String, MutableMap<String, MediaItem>>>> = HashMap()
@@ -72,8 +80,9 @@ class MusicService : MediaLibraryService() {
 
             return SessionCommandGroup.Builder()
                 .addAllPredefinedCommands(SessionCommand.COMMAND_VERSION_2)
-                .addCommand(COMMAND_MPD_CONNECT)
+                .addCommand(COMMAND_SET_MPD_ADDRESS)
                 .addCommand(COMMAND_SET_MEDIA_LIBRARY)
+                .addCommand(COMMAND_CONNECT)
                 .build()
         }
 
@@ -83,32 +92,42 @@ class MusicService : MediaLibraryService() {
                                      customCommand: SessionCommand,
                                      args: Bundle?): SessionResult {
             when (customCommand) {
-                COMMAND_MPD_CONNECT -> {
-                    if (connected) {
-                        timeoutInhibitor.close()
-                        connected = false
-                    }
+                COMMAND_SET_MPD_ADDRESS -> {
+                    if (args == null || !args.containsKey(COMMAND_ARG_MPD_HOST) || !args.containsKey(COMMAND_ARG_MPD_PORT))
+                        return SessionResult(SessionResult.RESULT_ERROR_BAD_VALUE, null)
 
-                    if (args == null || !args.containsKey(COMMAND_ARG_MPD_HOST) || !args.containsKey(COMMAND_ARG_MPD_PORT)) return SessionResult(SessionResult.RESULT_ERROR_BAD_VALUE,
-                        null)
-
-                    val host = args.getString(COMMAND_ARG_MPD_HOST, "")
-                    val port = args.getInt(COMMAND_ARG_MPD_PORT, -1)
-
-                    val channel = try {
-                        SocketChannel.open(InetSocketAddress(host, port))
-                    } catch (e: Exception) {
-                        return SessionResult(SessionResult.RESULT_ERROR_PERMISSION_DENIED, null)
-                    }
-
-                    timeoutInhibitor = MpdTimeoutInhibitor(channel)
-                    connected = true
+                    host = args.getString(COMMAND_ARG_MPD_HOST, "")
+                    port = args.getInt(COMMAND_ARG_MPD_PORT, -1)
                 }
 
                 COMMAND_SET_MEDIA_LIBRARY -> {
-                    if (args == null || !args.containsKey(COMMAND_ARG_MEDIA_LIBRARY)) return SessionResult(SessionResult.RESULT_ERROR_BAD_VALUE, null)
+                    if (args == null || !args.containsKey(COMMAND_ARG_MEDIA_LIBRARY))
+                        return SessionResult(SessionResult.RESULT_ERROR_BAD_VALUE, null)
 
                     mediaLibrary = args.getString(COMMAND_ARG_MEDIA_LIBRARY)!!
+                }
+
+                COMMAND_CONNECT -> {
+                    if (host == null) {
+                        return SessionResult(SessionResult.RESULT_ERROR_INVALID_STATE, null)
+                    }
+
+                    if (connectionState == ConnectionState.CONNECTING)
+                        return SessionResult(SessionResult.RESULT_ERROR_INVALID_STATE, null)
+                    else if (connectionState == ConnectionState.CONNECTED) {
+                        timeoutInhibitor.send(null)
+                        changeConnectionState(session, ConnectionState.DISCONNECTED)
+                    }
+
+                    try {
+                        timeoutInhibitor = MpdTimeoutInhibitor(InetSocketAddress(host, port ?: -1), {
+                            changeConnectionState(session, ConnectionState.CONNECTED)
+                        }) {
+                            changeConnectionState(session, ConnectionState.DISCONNECTED)
+                        }
+                    } catch (e: Exception) {
+                        return SessionResult(SessionResult.RESULT_ERROR_IO, null)
+                    }
                 }
             }
 
@@ -118,8 +137,17 @@ class MusicService : MediaLibraryService() {
         override fun onDisconnected(session: MediaSession, controller: MediaSession.ControllerInfo) {
             clients.remove(controller)
             if (clients.isEmpty()) {
-                timeoutInhibitor.close()
-                connected = false
+                timeoutInhibitor.send(null)
+                // TODO
+            }
+        }
+
+        private fun changeConnectionState(session: MediaSession, state: ConnectionState) {
+            synchronized(connectionState) {
+                val broadcast = connectionState != state
+                connectionState = state
+                if (broadcast)
+                    session.broadcastCustomCommand(COMMAND_MPD_CONNECTION_STATUS_CHANGED, Bundle().apply { putParcelable(COMMAND_ARG_MPD_CONNECTION_STATUS, connectionState) })
             }
         }
 
@@ -199,8 +227,8 @@ class MusicService : MediaLibraryService() {
 
                 parentId == "/artists" -> {
                     val artists = mutableListOf<MediaItem>()
-                    val buffer = timeoutInhibitor.send("list artist group MUSICBRAINZ_ARTISTID\n")
-                    val reader = BufferedReader(StringReader(StandardCharsets.UTF_8.decode(buffer).toString()))
+                    val reader = BufferedReader(StringReader(timeoutInhibitor.send("list artist group MUSICBRAINZ_ARTISTID\n")))
+
                     var artistId = reader.readLine()
 
                     val metadataBuilder = MediaMetadata.Builder()
@@ -245,8 +273,9 @@ class MusicService : MediaLibraryService() {
 
                 parentId == "/albums" -> {
                     val albums = mutableListOf<MediaItem>()
-                    val buffer = timeoutInhibitor.send("list album group MUSICBRAINZ_ALBUMID group artist group MUSICBRAINZ_ARTISTID\n")
-                    var reader = BufferedReader(StringReader(StandardCharsets.UTF_8.decode(buffer).toString()))
+                    var reader =
+                        BufferedReader(StringReader(timeoutInhibitor.send("list album group MUSICBRAINZ_ALBUMID group artist group MUSICBRAINZ_ARTISTID\n")))
+
                     var line = reader.readLine()
 
                     val sb = StringBuilder()
@@ -297,8 +326,7 @@ class MusicService : MediaLibraryService() {
 
                                         metadataBuilder.putString(MediaMetadata.METADATA_KEY_MEDIA_ID,
                                             "/albums/$albumId") // TODO: Check if MusicBrainz ALBUMID is unique per artist or unique in general
-                                            .putString(MediaMetadata.METADATA_KEY_TITLE, albumTitle)
-                                            .putString(MediaMetadata.METADATA_KEY_ARTIST, artistName)
+                                            .putString(MediaMetadata.METADATA_KEY_TITLE, albumTitle).putString(MediaMetadata.METADATA_KEY_ARTIST, artistName)
                                     }
 
                                     albums.add(itemBuilder.setMetadata(metadataBuilder.build()).build())
@@ -337,7 +365,7 @@ class MusicService : MediaLibraryService() {
                                         val albumTitle = line.drop("Album: ".length)
 
                                         sb.appendLine("find \"((MUSICBRAINZ_ARTISTID == \\\"$artistId\\\") AND (MUSICBRAINZ_ALBUMID == \\\"$albumId\\\"))\" window 0:1")
-                                         // TODO: Check if MusicBrainz ALBUMID is unique per artist or unique in general
+                                        // TODO: Check if MusicBrainz ALBUMID is unique per artist or unique in general
                                         metadataBuilder.putString(MediaMetadata.METADATA_KEY_MEDIA_ID, "/albums/$albumId")
                                             .putString(MediaMetadata.METADATA_KEY_TITLE, albumTitle)
                                             .putString(MediaMetadata.METADATA_KEY_ARTIST, artistName)
@@ -353,7 +381,8 @@ class MusicService : MediaLibraryService() {
 
                     sb.appendLine("command_list_end")
 
-                    reader = BufferedReader(StringReader(StandardCharsets.UTF_8.decode(timeoutInhibitor.send(sb.toString())).toString()))
+                    reader = BufferedReader(StringReader(timeoutInhibitor.send(sb.toString())))
+
                     line = reader.readLine()
                     while (line != "OK") {
                         val filename: String = line.drop("file: ".length)
@@ -393,13 +422,13 @@ class MusicService : MediaLibraryService() {
 
                 parentId.startsWith("/artists") -> {
                     val artistId = parentId.drop("/artists".length)
-                    val buffer = if (artistId.startsWith("/noid")) timeoutInhibitor.send("find \"(artist == \\\"${
-                        artistId.drop("/noid/".length).replace("\"", "\\\\\\\"")
-                    }\\\")\"\n")
-                    else timeoutInhibitor.send("find \"(MUSICBRAINZ_ARTISTID == \\\"${artistId.drop(1)}\\\")\"\n")
+                    val reader = if (artistId.startsWith("/noid")) BufferedReader(StringReader(timeoutInhibitor.send("find \"(artist == \\\"${
+                        artistId.drop("/noid/".length)
+                            .replace("\"", "\\\\\\\"")
+                    }\\\")\"\n")))
+                    else BufferedReader(StringReader(timeoutInhibitor.send("find \"(MUSICBRAINZ_ARTISTID == \\\"${artistId.drop(1)}\\\")\"\n")))
 
                     val items = mutableListOf<MediaItem>()
-                    val reader = BufferedReader(StringReader(StandardCharsets.UTF_8.decode(buffer).toString()))
                     var line = reader.readLine()
                     while (line != "OK") {
                         val filename: String = line.drop("file: ".length)
@@ -438,10 +467,8 @@ class MusicService : MediaLibraryService() {
                                 .setExtras(Bundle().apply {
                                     putString(METADATA_EXTRA_ARTIST_ID, parentId)
                                     putString(METADATA_EXTRA_ALBUM_ID, if (albumId.isEmpty()) {
-                                        if (parentId.startsWith("/artists/noid"))
-                                            "/albums/noid/noid/$artistName/$albumTitle"
-                                        else
-                                            "/albums/noid/${artistId.drop(1)}/$albumTitle"
+                                        if (parentId.startsWith("/artists/noid")) "/albums/noid/noid/$artistName/$albumTitle"
+                                        else "/albums/noid/${artistId.drop(1)}/$albumTitle"
                                     } else {
                                         "albums/$albumId"
                                     })
@@ -459,20 +486,19 @@ class MusicService : MediaLibraryService() {
 
                 parentId.startsWith("/albums") -> {
                     val albumId = parentId.drop("/albums".length)
-                    val buffer = if (albumId.startsWith("/noid/noid")) {
+                    val reader = if (albumId.startsWith("/noid/noid")) {
                         val artist = albumId.drop("/noid/noid/".length).takeWhile { it != '/' }.replace("\"", "\\\\\\\"")
                         val album = albumId.drop("/noid/noid/".length).dropWhile { it != '/' }.drop(1).replace("\"", "\\\\\\\"")
-                        timeoutInhibitor.send("find \"((artist == \\\"$artist\\\") AND (album == \\\"$album\\\"))\" sort disc\n")
+                        BufferedReader(StringReader(timeoutInhibitor.send("find \"((artist == \\\"$artist\\\") AND (album == \\\"$album\\\"))\" sort disc\n")))
                     } else if (albumId.startsWith("/noid")) {
                         val artist = albumId.drop("/noid/".length).takeWhile { it != '/' }
                         val album = albumId.drop("/noid/".length).dropWhile { it != '/' }.drop(1).replace("\"", "\\\\\\\"")
-                        timeoutInhibitor.send("find \"((MUSICBRAINZ_ARTISTID == \\\"$artist\\\") AND (album == \\\"$album\\\"))\" sort disc\n")
+                        BufferedReader(StringReader(timeoutInhibitor.send("find \"((MUSICBRAINZ_ARTISTID == \\\"$artist\\\") AND (album == \\\"$album\\\"))\" sort disc\n")))
                     } else {
-                        timeoutInhibitor.send("find \"(MUSICBRAINZ_ALBUMID == \\\"${albumId.drop(1)}\\\")\" sort disc\n")
+                        BufferedReader(StringReader(timeoutInhibitor.send("find \"(MUSICBRAINZ_ALBUMID == \\\"${albumId.drop(1)}\\\")\" sort disc\n")))
                     }
 
                     val items = mutableListOf<MediaItem>()
-                    val reader = BufferedReader(StringReader(StandardCharsets.UTF_8.decode(buffer).toString()))
                     var line = reader.readLine()
                     while (line != "OK") {
                         val filename: String = line.drop("file: ".length)
@@ -482,7 +508,7 @@ class MusicService : MediaLibraryService() {
                         var albumTitle = ""
                         var title = ""
                         var disc = 0.toLong()
-                        var track  = 0.toLong()
+                        var track = 0.toLong()
                         line = reader.readLine()
                         while (!line.startsWith("file: ") && line != "OK") {
                             when {
@@ -536,12 +562,22 @@ class MusicService : MediaLibraryService() {
         }
     }
 
-    companion object {
-        val COMMAND_MPD_CONNECT = SessionCommand("xyz.stalinsky.ampd.MusicService.COMMAND_MPD_CONNECT", null)
-        val COMMAND_SET_MEDIA_LIBRARY = SessionCommand("xyz.stalinsky.ampd.MusicService.COMMAND_SET_MEDIA_LIBRARY", null)
+    @Parcelize
+    enum class ConnectionState : Parcelable {
+        DISCONNECTED, CONNECTING, CONNECTED;
+    }
 
-        const val COMMAND_ARG_MPD_HOST = "xyz.stalinsky.ampd.MusicService.COMMAND_EXTRA_MPD_CONNECT.0"
-        const val COMMAND_ARG_MPD_PORT = "xyz.stalinsky.ampd.MusicService.COMMAND_EXTRA_MPD_CONNECT.1"
+    companion object {
+        val COMMAND_MPD_CONNECTION_STATUS_CHANGED = SessionCommand("xyz.stalinsky.ampd.MusicService.COMMAND_MPD_CONNECTION_STATUS_CHANGED", null)
+
+        const val COMMAND_ARG_MPD_CONNECTION_STATUS = "xyz.stalinsky.ampd.MusicService.COMMAND_EXTRA_MPD_CONNECTION_STATUS_CHANGED.0"
+
+        val COMMAND_SET_MPD_ADDRESS = SessionCommand("xyz.stalinsky.ampd.MusicService.COMMAND_SET_MPD_ADDRESS", null)
+        val COMMAND_SET_MEDIA_LIBRARY = SessionCommand("xyz.stalinsky.ampd.MusicService.COMMAND_SET_MEDIA_LIBRARY", null)
+        val COMMAND_CONNECT = SessionCommand("xyz.stalinsky.ampd.MusicService.COMMAND_CONNECT", null)
+
+        const val COMMAND_ARG_MPD_HOST = "xyz.stalinsky.ampd.MusicService.COMMAND_EXTRA_SET_MPD_ADDRESS.0"
+        const val COMMAND_ARG_MPD_PORT = "xyz.stalinsky.ampd.MusicService.COMMAND_EXTRA_SET_MPD_ADDRESS.1"
 
         const val COMMAND_ARG_MEDIA_LIBRARY = "xyz.stalinsky.ampd.MusicService.COMMAND_EXTRA_SET_MEDIA_LIBRARY.0"
 
@@ -550,156 +586,299 @@ class MusicService : MediaLibraryService() {
     }
 }
 
-// Socket MUST be created using SocketChannel.open()
-class MpdTimeoutInhibitor(private val channel: SocketChannel) : Closeable {
+class MpdTimeoutInhibitor(remote: SocketAddress, onConnected: () -> Unit, onShutdown: () -> Unit) : Closeable {
+    private val socket = SocketChannel.open()
+
     private val requestPipe = Pipe.open()
-    private val resultQueue = LinkedBlockingQueue<ByteBuffer>()
-    private val thread = Thread {
-        val selector = Selector.open()
-        var idle = true
-        var shouldDrain = false
-        requestPipe.source().configureBlocking(false)
-        val pipeKey = requestPipe.source().register(selector, SelectionKey.OP_READ)
+    private val resultPipe = Pipe.open()
+    private val thread: Thread
 
-        var resultCount = 0
-        var position = 0
-        var result: ByteBuffer = ByteBuffer.allocate(0)
-
-        var commandLength = 0
-        var request: ByteBuffer? = null
-
-        // Fetch the "OK MPD 0.xx.x" message
-        val buffer = ByteBuffer.allocate(64)
-        channel.read(buffer)
-        BufferedReader(StringReader(StandardCharsets.UTF_8.decode(buffer).toString())).readLine()
-
-        channel.configureBlocking(false)
-        val socketKey = channel.register(selector, SelectionKey.OP_WRITE)
-
-        while (true) {
-            val keySize = selector.select()
-            val keys = selector.selectedKeys()
-            if (keySize == 2) {
-                // 1. A command was requested from the pipe and the MPD server responded to our "idle" at the same time - in this case, none of the keys are writeable
-                // 2. A command was requested from the pipe and we are in the middle of issuing an "idle" command - in this case, one key is writeable
-
-                if (keys.none { it.isWritable }) {
-                    // Deregister the pipe while we drain the socket
-                    requestPipe.source().keyFor(selector).interestOps(0)
-                    assert(idle)
-                } else {
-                    // Don't issue the idle command and instead issue the requested command
-                    val sizeBuffer = ByteBuffer.allocate(4)
-                    requestPipe.source().read(sizeBuffer)
-                    sizeBuffer.rewind()
-                    commandLength = sizeBuffer.int
-                    if (commandLength == 0) break
-
-                    request = ByteBuffer.allocate(commandLength)
-                    requestPipe.source().read(request)
-                    request.rewind()
-                    channel.write(request)
-
-                    idle = false
-                    shouldDrain = false
-                    socketKey.interestOps(SelectionKey.OP_READ)
+    init {
+        thread = Thread {
+            // Connect
+            socket.apply {
+                try {
+                    socket().connect(remote, 15 * 1000) // 15 seconds
+                } catch (e: Exception) {
+                    onShutdown()
+                    return@Thread
                 }
-            } else {
-                val key = keys.first()
-                if (key == socketKey) {
-                    if (key.isWritable) {
-                        if (idle) {
-                            channel.write(ByteBuffer.allocate(5).put("idle\n".toByteArray()).rewind() as ByteBuffer)
-                        } else {
-                            if (shouldDrain) channel.write(ByteBuffer.allocate(7).put("noidle\n".toByteArray()).rewind() as ByteBuffer)
-                            else channel.write(request)
-                        }
 
-                        key.interestOps(SelectionKey.OP_READ)
-                    } else {
-                        resultCount++ // 1448 is for debugging purposes
-                        val newResult = ByteBuffer.allocate(1448 * resultCount)
-                        newResult.put(result)
-                        newResult.position(position)
-                        position += channel.read(newResult)
-                        result = newResult
+                // Read the "OK MPD"
+                // TODO: Make this asynchronous so a cancellation can be submitted
+                val buffer = ByteBuffer.allocate(32)
 
-                        if (result[position - 1] != '\n'.code.toByte()) {
-                            // If the last character is not a '\n' then surely we didn't read the whole command
-                            result.rewind()
-                        } else {
-                            // Otherwise, check if the last line is an "OK" or an "ACK"; if it's not, wait for more data to arrive
-                            var start = position - 1
-                            while (start != 0 && result[start - 1] != '\n'.code.toByte()) start--
+                while (true) {
+                    read(buffer) // TODO: Check if 0 is returned
+                    if (buffer.get(buffer.position() - 1) == '\n'.code.toByte()) break
+                }
 
-                            val end = position - 1
-                            val line = ByteArray(end - start) { 0 }
-                            result.position(start)
-                            result.get(line, 0, end - start)
-                            result.position(end + 1)
+                writeAll(this, ByteBuffer.allocate(5).put("idle\n".toByteArray()).flip() as ByteBuffer)
+            }.configureBlocking(false)
 
-                            val lineString = line.toString(Charsets.UTF_8)
-                            if (lineString == "OK" || lineString.startsWith("ACK")) {
-                                if (idle) { // If we disabled pipe read in line 592, then re-enable it here
-                                    pipeKey.interestOps(SelectionKey.OP_READ)
-                                } else {
-                                    if (!shouldDrain) {
-                                        result.rewind()
-                                        resultQueue.put(result)
-                                        idle = true
-                                    } else {
-                                        shouldDrain = false
-                                    }
+            onConnected()
 
-                                    result = ByteBuffer.allocate(0)
-                                    resultCount = 0
+            val source = requestPipe.source().configureBlocking(false) as Pipe.SourceChannel
+            val sink = resultPipe.sink()
+            val selector = Selector.open()
 
-                                    key.interestOps(SelectionKey.OP_WRITE)
-                                }
+            val socketKey = socket.register(selector, SelectionKey.OP_READ)
+            var sourceKey = source.register(selector, SelectionKey.OP_READ)
 
-                                position = 0
-                            } else {
-                                result.rewind()
-                            }
+            var handleSocket: () -> Boolean
+            var handleSource: () -> Boolean
+            var handleBoth: () -> Boolean
+
+            var onCommand: () -> Boolean = { false }
+            var readResponseAndThen: (ByteBuffer, Int, (ByteBuffer) -> () -> Boolean) -> Boolean = { _, _, _ -> false }
+            val cancel = {
+                Log.d(TAG, "Canceling")
+                false
+            }
+
+            // First arg - The buffer to write to the sink after sending the 'idle' command or null to not write anything to the sink
+            var writeIdle: (ByteBuffer?) -> Boolean = { false }
+            var writeIdleRec: (ByteBuffer, ByteBuffer?) -> Boolean = { _, _ -> false } // writeIdleRec is pre-declared so that it is usable recursively inside itself
+            writeIdleRec = { idle, buffer ->
+                Log.d(TAG, "Sending an 'idle'")
+                socket.write(idle)
+                handleSocket = if (idle.position() < idle.limit()) {
+                    { writeIdleRec(idle, buffer) }
+                } else {
+                    if (buffer != null) {
+                        buffer.flip()
+                        sink.write(ByteBuffer.allocate(4).putInt(buffer.limit()).flip() as ByteBuffer)
+                        while (buffer.position() < buffer.limit()) sink.write(buffer)
+
+                        handleSource = onCommand
+                    }
+
+                    //handleBoth = idleBoth
+                    socketKey.interestOps(SelectionKey.OP_READ);
+                    {
+                        readResponseAndThen(ByteBuffer.allocate(0), 1) {
+                            socketKey.interestOps(SelectionKey.OP_WRITE);
+                            { writeIdle(buffer) }
                         }
                     }
+                }
+
+                true
+            }
+
+            writeIdle = { writeIdleRec(ByteBuffer.allocate(5).put("idle\n".toByteArray()).flip() as ByteBuffer, it) }
+
+            // Read a complete packet from the MPD server and then do 'next' with this packet
+            readResponseAndThen = { buffer, count, next ->
+                Log.d(TAG, "Reading some response")
+                val newBuffer = ByteBuffer.allocate(count * 4096)
+                newBuffer.put(buffer)
+                if (socket.read(newBuffer) == 0) {
+                    Log.d(TAG, "Got 0 bytes")
+                    false
                 } else {
-                    val sizeBuffer = ByteBuffer.allocate(4)
-                    requestPipe.source().read(sizeBuffer)
-                    sizeBuffer.rewind()
-                    commandLength = sizeBuffer.int
-                    if (commandLength == 0) break
+                    handleSocket = if (checkPacket(newBuffer)) {
+                        next(newBuffer)
+                    } else {
+                        newBuffer.flip();
+                        { readResponseAndThen(newBuffer, count + 1, next) }
+                    }
 
-                    request = ByteBuffer.allocate(commandLength)
-                    requestPipe.source().read(request)
-                    request.rewind()
-
-                    idle = false
-                    shouldDrain = true
-                    socketKey.interestOps(SelectionKey.OP_WRITE)
+                    true
                 }
             }
 
-            keys.clear()
-        }
-    }
+            // Write a packet to the MPD server
+            var writeRequest: (ByteBuffer) -> Boolean = { false }
+            writeRequest = { buffer ->
+                Log.d(TAG, "Writing the command")
+                socket.write(buffer)
+                handleSocket = if (buffer.position() < buffer.limit()) {
+                    { writeRequest(buffer) }
+                } else {
+                    socketKey.interestOps(SelectionKey.OP_READ);
+                    {
+                        readResponseAndThen(ByteBuffer.allocate(0), 1) {
+                            socketKey.interestOps(SelectionKey.OP_WRITE);
+                            { writeIdle(it) }
+                        }
+                    }
+                }
 
-    init {
+                true
+            }
+
+            // Send a 'noidle' command to the MPD server
+            var sendNoIdle: (ByteBuffer, ByteBuffer) -> Boolean = { _, _ -> false }
+            sendNoIdle = { noidle: ByteBuffer, buffer: ByteBuffer ->
+                Log.d(TAG, "Sending a 'noidle'")
+                socket.write(noidle)
+                handleSocket = if (noidle.position() != noidle.limit()) {
+                    { sendNoIdle(noidle, buffer) }
+                } else {
+                    socketKey.interestOps(SelectionKey.OP_READ);
+                    {
+                        readResponseAndThen(ByteBuffer.allocate(0), 1) {
+                            socketKey.interestOps(SelectionKey.OP_WRITE);
+                            { writeRequest(buffer) }
+                        }
+                    }
+                }
+
+                true
+            }
+
+            onCommand = {
+                Log.d(TAG, "Handling an incoming command request")
+                var buffer = ByteBuffer.allocate(4)
+                // To ease the implementation, switch source to blocking mode until we read the entire command
+                sourceKey.cancel()
+                selector.selectNow()
+                source.configureBlocking(true)
+                if (source.read(buffer) == 0) {
+                    false
+                } else {
+                    buffer.flip()
+                    buffer = ByteBuffer.allocate(buffer.int)
+                    // TODO: Is reading all the buffer in one go guaranteed?
+                    while (buffer.position() < buffer.limit())
+                        source.read(buffer)
+
+                    buffer.flip()
+                    source.configureBlocking(false)
+                    sourceKey = source.register(selector, SelectionKey.OP_READ)
+                    socketKey.interestOps(SelectionKey.OP_WRITE)
+                    handleSocket = { sendNoIdle(ByteBuffer.allocate(7).put("noidle\n".toByteArray()).flip() as ByteBuffer, buffer) }
+                    // If another request comes in from the pipe while we are handling one then it must be a coming from a stop()
+                    handleSource = cancel
+                    handleBoth = cancel
+                    true
+                }
+            }
+
+            handleSocket = {
+                readResponseAndThen(ByteBuffer.allocate(0), 1) {
+                    socketKey.interestOps(SelectionKey.OP_WRITE);
+                    { writeIdle(null) }
+                }
+            }
+
+            handleSource = onCommand
+            //handleBoth = {
+            //    readResponseAndThen(ByteBuffer.allocate(0), 1) {
+            //        { writeIdle(null) }
+            //    }
+            //}
+
+            while (true) {
+                val keyCount = selector.select()
+
+                if (keyCount == 2) {
+                    Log.d(TAG, "Two keys selected")
+                    break
+                    //if (!handleBoth())
+                    //    break
+                } else {
+                    if (selector.selectedKeys().first() == socketKey) {
+                        if (!handleSocket()) {
+                            Log.d(TAG, "Exiting due to socket")
+                            // TODO: Notify the subscriber that the connection was closed by the peer
+                            break
+                        }
+                    } else {
+                        if (!handleSource()) {
+                            Log.d(TAG, "Exiting due to source")
+                            break
+                        }
+                    }
+                }
+
+                selector.selectedKeys().clear()
+            }
+
+            Log.d(TAG, "Exiting")
+
+            selector.close()
+            requestPipe.source().close()
+            requestPipe.sink().close()
+            requestPipe.source().close()
+            requestPipe.sink().close()
+            socket.close()
+            onShutdown()
+        }
+
         thread.start()
     }
 
     // NOTE: send() IS NOT THREAD SAFE
-    fun send(command: String): ByteBuffer {
-        requestPipe.sink()
-            .write(ByteBuffer.allocate(4 + command.toByteArray().size).putInt(command.toByteArray().size).put(command.toByteArray()).rewind() as ByteBuffer)
-        return resultQueue.take()
+    // send a null to shutdown the inhibitor
+    fun send(command: String?): String? {
+        if (!requestPipe.sink().isOpen)
+            return null
+
+        if (command == null) {
+            requestPipe.sink().close()
+            thread.join()
+            return null
+        }
+
+        writeAll(requestPipe.sink(), ByteBuffer.allocate(4).putInt(command.length).flip() as ByteBuffer)
+        writeAll(requestPipe.sink(), ByteBuffer.allocate(command.length).put(command.toByteArray()).flip() as ByteBuffer)
+        var buffer = ByteBuffer.allocate(4)
+        if (!readAll(resultPipe.source(), buffer)) return null
+
+        buffer.flip()
+        val size = buffer.int
+        buffer = ByteBuffer.allocate(size)
+        readAll(resultPipe.source(), buffer)
+
+        val arr = ByteArray(size)
+        buffer.flip()
+        buffer.get(arr)
+        return arr.toString(Charsets.UTF_8)
     }
 
     override fun close() {
-        requestPipe.sink().write(ByteBuffer.allocate(4).putInt(0).rewind() as ByteBuffer)
-        thread.join()
+    }
 
-        requestPipe.sink().close()
-        requestPipe.source().close()
+    private fun readAll(socket: ReadableByteChannel, buffer: ByteBuffer): Boolean {
+        var pos = 0
+        while (pos < buffer.limit()) {
+            val temp = socket.read(buffer)
+            if (temp == 0) return false
+
+            pos += temp
+        }
+
+        return true
+    }
+
+    private fun writeAll(socket: WritableByteChannel, buffer: ByteBuffer) {
+        while (buffer.position() < buffer.limit()) socket.write(buffer)
+    }
+
+    // Returns true if buffer is a complete packet i.e. the last line starts with an 'OK' or an 'ACK'. buffer must be at least of size 1; The buffer's position must be at the end
+    private fun checkPacket(buffer: ByteBuffer): Boolean {
+        var pos = buffer.position()
+        if (buffer.get(pos - 1) != '\n'.code.toByte()) return false
+
+        pos--
+        while (pos != 0 && buffer.get(pos - 1) != '\n'.code.toByte())
+            pos--
+
+        if (buffer.position() - pos < 3)
+            return false
+
+        val line = ByteArray(3)
+        val prevPos = buffer.position()
+        buffer.position(pos)
+        buffer.get(line, 0, 3)
+        buffer.position(prevPos)
+        val string = line.toString(Charsets.UTF_8)
+        return string == "ACK" || string.startsWith("OK")
+    }
+
+    companion object {
+        private const val TAG = "MPDTimeoutInhibitor"
     }
 }

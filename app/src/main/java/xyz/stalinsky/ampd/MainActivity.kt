@@ -90,7 +90,7 @@ class MainActivity : ComponentActivity() {
 
     private lateinit var controller: MediaBrowser
 
-    private val connectionState = MutableStateFlow(ConnectionState.CONNECTING)
+    private val connectionState = MutableStateFlow(MusicService.ConnectionState.DISCONNECTED)
 
     // For some reason if I don't put 'java.util' the compiler doesn't find Stack
     private val backstack = java.util.Stack<Screen>()
@@ -102,23 +102,11 @@ class MainActivity : ComponentActivity() {
 
     private val listener = SharedPreferences.OnSharedPreferenceChangeListener { sharedPreferences, key ->
         val onValueChanged = {
-            Futures.addCallback(controller.sendCustomCommand(MusicService.COMMAND_MPD_CONNECT, Bundle().apply {
+            controller.sendCustomCommand(MusicService.COMMAND_SET_MPD_ADDRESS, Bundle().apply {
                 putString(MusicService.COMMAND_ARG_MPD_HOST, mpdHost)
                 putInt(MusicService.COMMAND_ARG_MPD_PORT, mpdPort)
-            }), object : FutureCallback<SessionResult> {
-                override fun onSuccess(result: SessionResult?) {
-                    if (result != null && result.resultCode == SessionResult.RESULT_SUCCESS) {
-                        connectionState.value = ConnectionState.CONNECTED
-                        val params = MediaLibraryService.LibraryParams.Builder().build()
-                        controller.subscribe(controller.getLibraryRoot(params).get().mediaItem?.metadata?.mediaId!!, params)
-                    } else {
-                        connectionState.value = ConnectionState.ERROR
-                    }
-                }
-
-                override fun onFailure(t: Throwable) {
-                    t.printStackTrace()
-                }
+            }).addListener({
+                controller.sendCustomCommand(MusicService.COMMAND_CONNECT, null).get()
             }, executor)
         }
 
@@ -228,24 +216,11 @@ class MainActivity : ComponentActivity() {
 
             controller.sendCustomCommand(MusicService.COMMAND_SET_MEDIA_LIBRARY,
                 Bundle().apply { putString(MusicService.COMMAND_ARG_MEDIA_LIBRARY, mediaLibrary) }).addListener({
-
-                Futures.addCallback(controller.sendCustomCommand(MusicService.COMMAND_MPD_CONNECT, Bundle().apply {
+                controller.sendCustomCommand(MusicService.COMMAND_SET_MPD_ADDRESS, Bundle().apply {
                     putString(MusicService.COMMAND_ARG_MPD_HOST, mpdHost)
                     putInt(MusicService.COMMAND_ARG_MPD_PORT, mpdPort)
-                }), object : FutureCallback<SessionResult> {
-                    override fun onSuccess(result: SessionResult?) {
-                        if (result != null && result.resultCode == SessionResult.RESULT_SUCCESS) {
-                            connectionState.value = ConnectionState.CONNECTED
-                            val params = MediaLibraryService.LibraryParams.Builder().build()
-                            (controller as MediaBrowser).subscribe(controller.getLibraryRoot(params).get().mediaItem?.metadata?.mediaId!!, params)
-                        } else {
-                            connectionState.value = ConnectionState.ERROR
-                        }
-                    }
-
-                    override fun onFailure(t: Throwable) {
-                        t.printStackTrace()
-                    }
+                }).addListener({
+                    controller.sendCustomCommand(MusicService.COMMAND_CONNECT, null).get()
                 }, executor)
             }, executor)
         }
@@ -272,8 +247,26 @@ class MainActivity : ComponentActivity() {
         }
 
         override fun onCustomCommand(controller: MediaController, command: SessionCommand, args: Bundle?): SessionResult {
-            controller.close()
-            Log.i("MainActivity.Callback", "closed")
+            when (command) {
+                MusicService.COMMAND_MPD_CONNECTION_STATUS_CHANGED -> {
+                    when (args!!.getParcelable<MusicService.ConnectionState>(MusicService.COMMAND_ARG_MPD_CONNECTION_STATUS)) {
+                        MusicService.ConnectionState.CONNECTED -> {
+                            connectionState.value = MusicService.ConnectionState.CONNECTED
+                            val params = MediaLibraryService.LibraryParams.Builder().build()
+                            (controller as MediaBrowser).subscribe(controller.getLibraryRoot(params).get().mediaItem?.metadata?.mediaId!!, params)
+                        }
+
+                        MusicService.ConnectionState.CONNECTING -> {
+                            connectionState.value = MusicService.ConnectionState.CONNECTING
+                        }
+
+                        MusicService.ConnectionState.DISCONNECTED -> {
+                            connectionState.value = MusicService.ConnectionState.DISCONNECTED
+                        }
+                    }
+                }
+            }
+
             return SessionResult(SessionResult.RESULT_SUCCESS, null)
         }
 
@@ -434,7 +427,7 @@ class MainActivity : ComponentActivity() {
 @ExperimentalMaterialApi
 @ExperimentalPagerApi
 @Composable
-fun Main(connectionFlow: StateFlow<ConnectionState>,
+fun Main(connectionFlow: StateFlow<MusicService.ConnectionState>,
          onBackPressed: () -> Unit,
          screenFlow: StateFlow<Screen>,
          playerState: PlayerState,
@@ -448,7 +441,7 @@ fun Main(connectionFlow: StateFlow<ConnectionState>,
     if (screen !is Screen.MainScreen) BackHandler(true, onBackPressed)
 
     val connectionState by connectionFlow.collectAsState()
-    if (connectionState == ConnectionState.ERROR) {
+    if (connectionState == MusicService.ConnectionState.DISCONNECTED) {
         Text("MPD CONNECTION FAILED")
     } else {
         val playingState by playerState.state.collectAsState()
@@ -762,7 +755,3 @@ data class PlayerState(val state: StateFlow<Int>,
                        val current: StateFlow<Pair<Int, Bitmap?>>,
                        val progress: StateFlow<Long>,
                        val buffered: StateFlow<Long>)
-
-enum class ConnectionState {
-    CONNECTING, CONNECTED, ERROR
-}
