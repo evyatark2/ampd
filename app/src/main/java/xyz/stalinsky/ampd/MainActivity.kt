@@ -595,11 +595,19 @@ fun Main(connectionFlow: StateFlow<MusicService.ConnectionState>,
 
                             val tracks = screen.tracks.collectAsState().value
                             if (tracks != null) {
+                                var showDisc = false
+                                for (track in tracks) {
+                                    if (track.second.disc != 1) {
+                                        showDisc = true
+                                        break
+                                    }
+                                }
+
                                 CompositionLocalProvider(LocalOverScrollConfiguration provides null) {
                                     Column(Modifier.fillMaxSize().padding(top = redactedHeight).verticalScroll(scrollState)) {
                                         Spacer(Modifier.height(heightDifference))
                                         tracks.forEachIndexed { i, track ->
-                                            TrackView(track.second, Modifier.clickable {
+                                            TrackView(track.second, showDisc, Modifier.clickable {
                                                 setPlaylist(tracks.map { it.first }, i)
                                             })
                                         }
@@ -691,11 +699,11 @@ fun AlbumView(album: Album, onClick: () -> Unit) {
 }
 
 @Composable
-fun TrackView(track: Track, modifier: Modifier = Modifier) {
+fun TrackView(track: Track, showDisc: Boolean, modifier: Modifier = Modifier) {
     ConstraintLayout(modifier.fillMaxWidth().height(88.dp)) {
         val (trackConstraint, titleConstraint, artistConstraint, buttonConstraint) = createRefs()
 
-        Text(if (track.disc > 1) "${track.disc}-${track.track}" else track.track.toString(), Modifier.constrainAs(trackConstraint) {
+        Text(if (showDisc) "${track.disc}-${track.track}" else track.track.toString(), Modifier.constrainAs(trackConstraint) {
             top.linkTo(parent.top)
             bottom.linkTo(parent.bottom)
             start.linkTo(parent.start, 16.dp)
