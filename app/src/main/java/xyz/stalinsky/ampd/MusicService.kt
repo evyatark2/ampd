@@ -16,10 +16,19 @@ import androidx.media2.session.*
 import com.google.android.exoplayer2.C
 import com.google.android.exoplayer2.ExoPlayer
 import com.google.android.exoplayer2.audio.AudioAttributes
+import com.google.android.exoplayer2.database.StandaloneDatabaseProvider
+import com.google.android.exoplayer2.drm.DrmSessionManagerProvider
 import com.google.android.exoplayer2.ext.media2.SessionPlayerConnector
+import com.google.android.exoplayer2.source.MediaSource
+import com.google.android.exoplayer2.source.ProgressiveMediaSource
+import com.google.android.exoplayer2.upstream.*
+import com.google.android.exoplayer2.upstream.cache.CacheDataSource
+import com.google.android.exoplayer2.upstream.cache.LeastRecentlyUsedCacheEvictor
+import com.google.android.exoplayer2.upstream.cache.SimpleCache
 import kotlinx.parcelize.Parcelize
 import java.io.BufferedReader
 import java.io.Closeable
+import java.io.File
 import java.io.StringReader
 import java.net.InetSocketAddress
 import java.net.SocketAddress
@@ -40,6 +49,17 @@ class MusicService : MediaLibraryService() {
         session = MediaLibrarySession.Builder(this,
             SessionPlayerConnector(ExoPlayer.Builder(this)
                 .setAudioAttributes(AudioAttributes.Builder().setContentType(C.CONTENT_TYPE_MUSIC).setUsage(C.USAGE_MEDIA).build(), true)
+                .setMediaSourceFactory(object : MediaSource.Factory {
+                    private val factory = ProgressiveMediaSource.Factory(CacheDataSource.Factory().setCache(SimpleCache(File(this@MusicService.cacheDir, "media"), LeastRecentlyUsedCacheEvictor(256 * 1024 * 1024), StandaloneDatabaseProvider(this@MusicService))).setUpstreamDataSourceFactory(DefaultDataSource.Factory(this@MusicService)).setFlags(CacheDataSource.FLAG_IGNORE_CACHE_ON_ERROR))
+
+                    override fun setDrmSessionManagerProvider(drmSessionManagerProvider: DrmSessionManagerProvider?) = this
+
+                    override fun setLoadErrorHandlingPolicy(loadErrorHandlingPolicy: LoadErrorHandlingPolicy?) = this
+
+                    override fun getSupportedTypes() = intArrayOf()
+
+                    override fun createMediaSource(mediaItem: com.google.android.exoplayer2.MediaItem) = factory.createMediaSource(mediaItem)
+                })
                 .build()),
             executor,
             Callback()).build()
@@ -739,7 +759,7 @@ class MpdTimeoutInhibitor(remote: SocketAddress, onConnected: () -> Unit, onShut
                     false
                 } else {
                     buffer.flip()
-                    buffer = ByteBuffer.allocate(buffer.int)
+                    buffer = ByteBuffer.allocate(buffer.getInt())
                     // TODO: Is reading all the buffer in one go guaranteed?
                     while (buffer.position() < buffer.limit())
                         source.read(buffer)
