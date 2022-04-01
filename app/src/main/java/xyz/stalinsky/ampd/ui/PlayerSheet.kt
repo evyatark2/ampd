@@ -11,6 +11,7 @@ import androidx.compose.material.*
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.List
 import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.graphics.Color
@@ -177,6 +178,8 @@ fun ExpandedPlayer(title: String,
                 bottom.linkTo(playConstraint.top, 16.dp)
                 start.linkTo(parent.start, 16.dp)
                 end.linkTo(parent.end, 16.dp)
+
+                width = Dimension.fillToConstraints
             })
 
             IconButton(onClick = { /*TODO*/ }, Modifier.constrainAs(playlistButtonConstraint) {
@@ -232,16 +235,23 @@ fun ExpandedPlayer(title: String,
  */
 @Composable
 fun SeekBar(progress: Long, buffered: Long, max: Long, onSeek: (Long) -> Unit, modifier: Modifier = Modifier) {
-    var isTapping by remember { mutableStateOf(false) }
+    var isSeeking by remember { mutableStateOf(false) }
     var tapProgress by remember { mutableStateOf(0f) }
-    Slider(value = if (!isTapping) progress.toFloat() / max else tapProgress, onValueChange = {
-        if (!isTapping) {
-            isTapping = true
-        }
 
-        tapProgress = it
-    }, modifier, onValueChangeFinished = {
-        onSeek((tapProgress * max).roundToLong())
-        isTapping = false
-    })
+    Row(modifier, verticalAlignment = Alignment.CenterVertically) {
+        SingleLineText("${((if (isSeeking) (tapProgress * max).toLong() else progress) / 1000) / 60}:${(((if (isSeeking) (tapProgress * max).toLong() else progress) / 1000) % 60).toString().padStart(2, '0')}", style = MaterialTheme.typography.subtitle1)
+
+        Slider(value = if (!isSeeking) progress.toFloat() / max else tapProgress, onValueChange = {
+            if (!isSeeking) {
+                isSeeking = true
+            }
+
+            tapProgress = it
+        }, onValueChangeFinished = {
+            onSeek((tapProgress * max).roundToLong())
+            isSeeking = false
+        }, modifier = Modifier.weight(1f))
+
+        SingleLineText("${(max / 1000) / 60}:${((max / 1000) % 60).toString().padStart(2, '0')}", style = MaterialTheme.typography.subtitle1)
+    }
 }
