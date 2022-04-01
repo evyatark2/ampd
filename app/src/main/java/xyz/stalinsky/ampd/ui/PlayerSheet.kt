@@ -21,7 +21,6 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.vectorResource
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.constraintlayout.compose.ConstraintLayout
 import androidx.constraintlayout.compose.Dimension
@@ -100,19 +99,19 @@ fun RedactedPlayer(title: String, artist: String, alpha: Float, playerState: Int
             ConstraintLayout(Modifier.fillMaxWidth().height(72.dp).alpha(alpha)) {
                 val (titleConstraint, artistConstraint, buttonConstraint) = createRefs()
 
-                Text(title, Modifier.paddingFromBaseline(28.dp).constrainAs(titleConstraint) {
+                SingleLineText(title, Modifier.paddingFromBaseline(28.dp).constrainAs(titleConstraint) {
                     top.linkTo(parent.top)
                     start.linkTo(parent.start, 16.dp)
                     end.linkTo(buttonConstraint.start, 28.dp)
                     width = Dimension.fillToConstraints
-                }, style = MaterialTheme.typography.subtitle1, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                }, style = MaterialTheme.typography.subtitle1)
 
-                Text(artist, Modifier.paddingFromBaseline(48.dp).constrainAs(artistConstraint) {
+                SingleLineText(artist, Modifier.paddingFromBaseline(48.dp).constrainAs(artistConstraint) {
                     top.linkTo(parent.top)
                     start.linkTo(parent.start, 16.dp)
                     end.linkTo(buttonConstraint.start, 28.dp)
                     width = Dimension.fillToConstraints
-                }, style = MaterialTheme.typography.caption, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                }, style = MaterialTheme.typography.caption)
 
                 IconButton(onClick = onPlayPause, Modifier.constrainAs(buttonConstraint) {
                     end.linkTo(parent.end, 16.dp)
@@ -162,16 +161,16 @@ fun ExpandedPlayer(title: String,
                 height = Dimension.fillToConstraints
             }, contentScale = ContentScale.Crop)
 
-            Text(title, Modifier.constrainAs(titleConstraint) {
+            SingleLineText(title, Modifier.constrainAs(titleConstraint) {
                 bottom.linkTo(artistConstraint.top, 16.dp)
-                start.linkTo(parent.start)
-                end.linkTo(parent.end)
+                start.linkTo(parent.start, 16.dp)
+                end.linkTo(parent.end, 16.dp)
             }, style = MaterialTheme.typography.h6)
 
-            Text(artist, Modifier.constrainAs(artistConstraint) {
+            SingleLineText(artist, Modifier.constrainAs(artistConstraint) {
                 bottom.linkTo(seekBarConstraint.top, 16.dp)
-                start.linkTo(parent.start)
-                end.linkTo(parent.end)
+                start.linkTo(parent.start, 16.dp)
+                end.linkTo(parent.end, 16.dp)
             }, style = MaterialTheme.typography.subtitle1)
 
             SeekBar(progress = progress, buffered = 0, max = duration, onSeek = onSeek, Modifier.constrainAs(seekBarConstraint) {

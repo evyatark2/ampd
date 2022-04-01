@@ -55,6 +55,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
+import xyz.stalinsky.ampd.ui.SingleLineText
 import xyz.stalinsky.ampd.ui.PlayerSheet
 import xyz.stalinsky.ampd.ui.theme.AMPDTheme
 import java.util.Stack
@@ -544,10 +545,13 @@ fun Main(connectionFlow: StateFlow<MusicService.ConnectionState>,
                                     }) {
                                         val (titleConstraint) = createRefs()
 
-                                        Text(songs[it].second.title, Modifier.constrainAs(titleConstraint) {
+                                        SingleLineText(songs[it].second.title, Modifier.constrainAs(titleConstraint) {
                                             top.linkTo(parent.top)
                                             bottom.linkTo(parent.bottom)
                                             start.linkTo(parent.start, 16.dp)
+                                            end.linkTo(parent.end, 16.dp)
+
+                                            width = Dimension.fillToConstraints
                                         })
                                     }
                                 }
@@ -579,7 +583,7 @@ fun Main(connectionFlow: StateFlow<MusicService.ConnectionState>,
                                         RequestOptions().diskCacheStrategy(DiskCacheStrategy.RESOURCE)
                                     }, contentScale = ContentScale.Crop)
 
-                                    Text(screen.albumTitle,
+                                    SingleLineText(screen.albumTitle,
                                         Modifier.align(Alignment.BottomStart)
                                             .paddingFromBaseline(bottom = 20.dp)
                                             .padding(start = (16 + 56 * offsetProgress).dp)
@@ -652,7 +656,7 @@ fun ArtistView(name: String, onClick: () -> Unit) {
     ConstraintLayout(Modifier.clickable(onClick = onClick).height(48.dp).fillMaxWidth()) {
         val (constraint) = createRefs()
 
-        Text(name, Modifier.constrainAs(constraint) {
+        SingleLineText(name, Modifier.constrainAs(constraint) {
             top.linkTo(parent.top)
             bottom.linkTo(parent.bottom)
             start.linkTo(parent.start, 16.dp)
@@ -680,7 +684,7 @@ fun AlbumView(album: Album, onClick: () -> Unit) {
             RequestOptions().override(fortyDp, fortyDp).diskCacheStrategy(DiskCacheStrategy.RESOURCE)
         }, contentScale = ContentScale.Crop)
 
-        Text(album.title, Modifier.paddingFromBaseline(28.dp).constrainAs(titleConstraint) {
+        SingleLineText(album.title, Modifier.paddingFromBaseline(28.dp).constrainAs(titleConstraint) {
             top.linkTo(parent.top)
             start.linkTo(artConstraint.end, 16.dp)
             end.linkTo(parent.end, 16.dp)
@@ -688,7 +692,7 @@ fun AlbumView(album: Album, onClick: () -> Unit) {
             width = Dimension.fillToConstraints
         }, style = MaterialTheme.typography.subtitle1)
 
-        Text(album.artist, Modifier.paddingFromBaseline(48.dp).constrainAs(artistConstraint) {
+        SingleLineText(album.artist, Modifier.paddingFromBaseline(48.dp).constrainAs(artistConstraint) {
             top.linkTo(parent.top)
             start.linkTo(artConstraint.end, 16.dp)
             end.linkTo(parent.end, 16.dp)
@@ -703,27 +707,27 @@ fun TrackView(track: Track, showDisc: Boolean, modifier: Modifier = Modifier) {
     ConstraintLayout(modifier.fillMaxWidth().height(88.dp)) {
         val (trackConstraint, titleConstraint, artistConstraint, buttonConstraint) = createRefs()
 
-        Text(if (showDisc) "${track.disc}-${track.track}" else track.track.toString(), Modifier.constrainAs(trackConstraint) {
+        SingleLineText(if (showDisc) "${track.disc}-${track.track}" else track.track.toString(), Modifier.constrainAs(trackConstraint) {
             top.linkTo(parent.top)
             bottom.linkTo(parent.bottom)
             start.linkTo(parent.start, 16.dp)
         }, style = MaterialTheme.typography.subtitle2)
 
-        Text(track.title, Modifier.paddingFromBaseline(40.dp).constrainAs(titleConstraint) {
+        SingleLineText(track.title, Modifier.paddingFromBaseline(40.dp).constrainAs(titleConstraint) {
             top.linkTo(parent.top)
             start.linkTo(trackConstraint.end, 16.dp)
             end.linkTo(buttonConstraint.start, 16.dp)
 
             width = Dimension.fillToConstraints
-        }, style = MaterialTheme.typography.subtitle1, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        }, style = MaterialTheme.typography.subtitle1)
 
-        Text(track.artist, Modifier.paddingFromBaseline(60.dp).constrainAs(artistConstraint) {
+        SingleLineText(track.artist, Modifier.paddingFromBaseline(60.dp).constrainAs(artistConstraint) {
             top.linkTo(parent.top)
             start.linkTo(trackConstraint.end, 16.dp)
             end.linkTo(buttonConstraint.start, 16.dp)
 
             width = Dimension.fillToConstraints
-        }, style = MaterialTheme.typography.caption, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        }, style = MaterialTheme.typography.caption)
 
         IconButton(onClick = {
 
