@@ -422,8 +422,8 @@ class MainActivity : ComponentActivity() {
     }
 }
 
-@OptIn(ExperimentalPagerApi::class, androidx.compose.material.ExperimentalMaterialApi::class, androidx.compose.foundation.ExperimentalFoundationApi::class,
-    androidx.compose.animation.ExperimentalAnimationApi::class)
+@OptIn(ExperimentalPagerApi::class, ExperimentalMaterialApi::class, androidx.compose.foundation.ExperimentalFoundationApi::class,
+    ExperimentalAnimationApi::class)
 @Composable
 fun Main(connectionFlow: StateFlow<MusicService.ConnectionState>,
          onBackPressed: () -> Unit,
