@@ -8,7 +8,6 @@ import android.annotation.SuppressLint
 import android.net.Uri
 import android.os.Bundle
 import android.os.Parcelable
-import android.util.Log
 import androidx.media2.common.MediaItem
 import androidx.media2.common.MediaMetadata
 import androidx.media2.common.UriMediaItem
@@ -655,7 +654,6 @@ class MpdTimeoutInhibitor(remote: SocketAddress, onConnected: () -> Unit, onShut
             var onCommand: () -> Boolean = { false }
             var readResponseAndThen: (ByteBuffer, Int, (ByteBuffer) -> () -> Boolean) -> Boolean = { _, _, _ -> false }
             val cancel = {
-                Log.d(TAG, "Canceling")
                 false
             }
 
@@ -663,7 +661,6 @@ class MpdTimeoutInhibitor(remote: SocketAddress, onConnected: () -> Unit, onShut
             var writeIdle: (ByteBuffer?) -> Boolean = { false }
             var writeIdleRec: (ByteBuffer, ByteBuffer?) -> Boolean = { _, _ -> false } // writeIdleRec is pre-declared so that it is usable recursively inside itself
             writeIdleRec = { idle, buffer ->
-                Log.d(TAG, "Sending an 'idle'")
                 socket.write(idle)
                 handleSocket = if (idle.position() < idle.limit()) {
                     { writeIdleRec(idle, buffer) }
@@ -693,7 +690,6 @@ class MpdTimeoutInhibitor(remote: SocketAddress, onConnected: () -> Unit, onShut
 
             // Read a complete packet from the MPD server and then do 'next' with this packet
             readResponseAndThen = { buffer, count, next ->
-                Log.d(TAG, "Reading some response")
                 val newBuffer = ByteBuffer.allocate(count * 4096)
                 newBuffer.put(buffer)
                 if (socket.read(newBuffer) == 0) {
@@ -714,7 +710,6 @@ class MpdTimeoutInhibitor(remote: SocketAddress, onConnected: () -> Unit, onShut
             // Write a packet to the MPD server
             var writeRequest: (ByteBuffer) -> Boolean = { false }
             writeRequest = { buffer ->
-                Log.d(TAG, "Writing the command")
                 socket.write(buffer)
                 handleSocket = if (buffer.position() < buffer.limit()) {
                     { writeRequest(buffer) }
@@ -734,7 +729,6 @@ class MpdTimeoutInhibitor(remote: SocketAddress, onConnected: () -> Unit, onShut
             // Send a 'noidle' command to the MPD server
             var sendNoIdle: (ByteBuffer, ByteBuffer) -> Boolean = { _, _ -> false }
             sendNoIdle = { noidle: ByteBuffer, buffer: ByteBuffer ->
-                Log.d(TAG, "Sending a 'noidle'")
                 socket.write(noidle)
                 handleSocket = if (noidle.position() != noidle.limit()) {
                     { sendNoIdle(noidle, buffer) }
@@ -752,7 +746,6 @@ class MpdTimeoutInhibitor(remote: SocketAddress, onConnected: () -> Unit, onShut
             }
 
             onCommand = {
-                Log.d(TAG, "Handling an incoming command request")
                 var buffer = ByteBuffer.allocate(4)
                 // To ease the implementation, switch source to blocking mode until we read the entire command
                 sourceKey.cancel()
@@ -797,20 +790,17 @@ class MpdTimeoutInhibitor(remote: SocketAddress, onConnected: () -> Unit, onShut
                 val keyCount = selector.select()
 
                 if (keyCount == 2) {
-                    Log.d(TAG, "Two keys selected")
                     break
                     //if (!handleBoth())
                     //    break
                 } else {
                     if (selector.selectedKeys().first() == socketKey) {
                         if (!handleSocket()) {
-                            Log.d(TAG, "Exiting due to socket")
                             // TODO: Notify the subscriber that the connection was closed by the peer
                             break
                         }
                     } else {
                         if (!handleSource()) {
-                            Log.d(TAG, "Exiting due to source")
                             break
                         }
                     }
@@ -818,8 +808,6 @@ class MpdTimeoutInhibitor(remote: SocketAddress, onConnected: () -> Unit, onShut
 
                 selector.selectedKeys().clear()
             }
-
-            Log.d(TAG, "Exiting")
 
             selector.close()
             requestPipe.source().close()
