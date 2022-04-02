@@ -689,8 +689,7 @@ class MpdTimeoutInhibitor(remote: SocketAddress, onConnected: () -> Unit, onShut
             readResponseAndThen = { buffer, count, next ->
                 val newBuffer = ByteBuffer.allocate(count * 4096)
                 newBuffer.put(buffer)
-                if (socket.read(newBuffer) == 0) {
-                    Log.d(TAG, "Got 0 bytes")
+                if (socket.read(newBuffer) == -1) {
                     false
                 } else {
                     handleSocket = if (checkPacket(newBuffer)) {
@@ -748,9 +747,13 @@ class MpdTimeoutInhibitor(remote: SocketAddress, onConnected: () -> Unit, onShut
                 sourceKey.cancel()
                 selector.selectNow()
                 source.configureBlocking(true)
-                if (source.read(buffer) == 0) {
+
+                if (source.read(buffer) == -1) {
                     false
                 } else {
+                    while (buffer.position() < buffer.limit())
+                        source.read(buffer)
+
                     buffer.flip()
                     buffer = ByteBuffer.allocate(buffer.getInt())
                     // TODO: Is reading all the buffer in one go guaranteed?
@@ -853,7 +856,8 @@ class MpdTimeoutInhibitor(remote: SocketAddress, onConnected: () -> Unit, onShut
         var pos = 0
         while (pos < buffer.limit()) {
             val temp = socket.read(buffer)
-            if (temp == 0) return false
+            if (temp == -1)
+                return false
 
             pos += temp
         }
