@@ -43,22 +43,24 @@ class MusicService : MediaLibraryService() {
 
     private lateinit var session: MediaLibrarySession
 
+    private lateinit var cacheDataSource: CacheDataSource.Factory
+
     override fun onCreate() {
         super.onCreate()
+        cacheDataSource = CacheDataSource.Factory().setUpstreamDataSourceFactory(DefaultDataSource.Factory(this@MusicService)).setFlags(CacheDataSource.FLAG_IGNORE_CACHE_ON_ERROR)
+        cacheDataSource.setCache(SimpleCache(File(this@MusicService.cacheDir, "media"), LeastRecentlyUsedCacheEvictor(256 * 1024 * 1024), StandaloneDatabaseProvider(this@MusicService)))
 
         session = MediaLibrarySession.Builder(this,
             SessionPlayerConnector(ExoPlayer.Builder(this)
                 .setAudioAttributes(AudioAttributes.Builder().setContentType(C.CONTENT_TYPE_MUSIC).setUsage(C.USAGE_MEDIA).build(), true)
                 .setMediaSourceFactory(object : MediaSource.Factory {
-                    private val factory = ProgressiveMediaSource.Factory(CacheDataSource.Factory().setCache(SimpleCache(File(this@MusicService.cacheDir, "media"), LeastRecentlyUsedCacheEvictor(256 * 1024 * 1024), StandaloneDatabaseProvider(this@MusicService))).setUpstreamDataSourceFactory(DefaultDataSource.Factory(this@MusicService)).setFlags(CacheDataSource.FLAG_IGNORE_CACHE_ON_ERROR))
-
                     override fun setDrmSessionManagerProvider(drmSessionManagerProvider: DrmSessionManagerProvider?) = this
 
                     override fun setLoadErrorHandlingPolicy(loadErrorHandlingPolicy: LoadErrorHandlingPolicy?) = this
 
                     override fun getSupportedTypes() = intArrayOf()
 
-                    override fun createMediaSource(mediaItem: com.google.android.exoplayer2.MediaItem) = factory.createMediaSource(mediaItem)
+                    override fun createMediaSource(mediaItem: com.google.android.exoplayer2.MediaItem) = ProgressiveMediaSource.Factory(cacheDataSource).createMediaSource(mediaItem)
                 })
                 .build()),
             executor,
@@ -68,6 +70,7 @@ class MusicService : MediaLibraryService() {
     override fun onDestroy() {
         super.onDestroy()
 
+        cacheDataSource.cache?.release()
         // SessionPlayer should be closed after the session
         val player = session.player
         session.close()
