@@ -174,7 +174,8 @@ class MainActivity : ComponentActivity() {
                         controller.seekTo(it).addListener({
                             updateSongProgressJob = lifecycle.coroutineScope.launch {
                                 while (true) {
-                                    delay(50)
+                                    // 24 fps
+                                    delay(42)
                                     progressState.value = controller.currentPosition
                                 }
                             }
@@ -294,7 +295,8 @@ class MainActivity : ComponentActivity() {
                 SessionPlayer.PLAYER_STATE_PLAYING -> {
                     updateSongProgressJob = lifecycle.coroutineScope.launch {
                         while (true) {
-                            delay(50)
+                            // 24 fps
+                            delay(42)
                             progressState.value = controller.currentPosition
                         }
                     }
@@ -310,7 +312,8 @@ class MainActivity : ComponentActivity() {
             if ((state == SessionPlayer.BUFFERING_STATE_BUFFERING_AND_PLAYABLE || state == SessionPlayer.BUFFERING_STATE_BUFFERING_AND_STARVED) && (this.state != SessionPlayer.BUFFERING_STATE_BUFFERING_AND_PLAYABLE && this.state != SessionPlayer.BUFFERING_STATE_BUFFERING_AND_STARVED)) {
                 updateBufferedProgressJob = lifecycle.coroutineScope.launch {
                     while (true) {
-                        delay(50)
+                        // 24 fps
+                        delay(42)
                         bufferedState.value = controller.bufferedPosition
                     }
                 }
