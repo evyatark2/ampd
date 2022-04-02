@@ -131,7 +131,7 @@ class MusicService : MediaLibraryService() {
                 }
 
                 COMMAND_CONNECT -> {
-                    if (host == null) {
+                    if (host == null || mediaLibrary == null) {
                         return SessionResult(SessionResult.RESULT_ERROR_INVALID_STATE, null)
                     }
 
