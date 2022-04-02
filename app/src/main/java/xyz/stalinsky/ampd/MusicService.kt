@@ -134,11 +134,8 @@ class MusicService : MediaLibraryService() {
                         return SessionResult(SessionResult.RESULT_ERROR_INVALID_STATE, null)
                     }
 
-                    if (connectionState == ConnectionState.CONNECTING)
-                        return SessionResult(SessionResult.RESULT_ERROR_INVALID_STATE, null)
-                    else if (connectionState == ConnectionState.CONNECTED) {
+                    if (connectionState != ConnectionState.DISCONNECTED) {
                         timeoutInhibitor.send(null)
-                        changeConnectionState(session, ConnectionState.DISCONNECTED)
                     }
 
                     try {
