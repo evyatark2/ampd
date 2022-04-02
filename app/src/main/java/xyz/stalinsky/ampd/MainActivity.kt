@@ -269,8 +269,6 @@ class MainActivity : ComponentActivity() {
         }
 
         override fun onPlaylistChanged(controller: MediaController, list: MutableList<MediaItem>?, metadata: MediaMetadata?) {
-            currentItemState.value = Pair(controller.currentMediaItemIndex, null)
-
             playlistState.value = list?.map {
                 Pair(it.metadata?.getString(MediaMetadata.METADATA_KEY_MEDIA_ID)!!,
                     Song(it.metadata?.getString(MediaMetadata.METADATA_KEY_TITLE)!!,
