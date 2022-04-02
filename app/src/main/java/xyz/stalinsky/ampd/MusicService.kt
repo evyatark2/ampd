@@ -824,24 +824,27 @@ class MpdTimeoutInhibitor(remote: SocketAddress, onConnected: () -> Unit, onShut
     // NOTE: send() IS NOT THREAD SAFE
     // send a null to shutdown the inhibitor
     fun send(command: String?): String? {
-        if (!requestPipe.sink().isOpen)
-            return null
-
         if (command == null) {
             requestPipe.sink().close()
             thread.join()
             return null
         }
 
-        writeAll(requestPipe.sink(), ByteBuffer.allocate(4).putInt(command.length).flip() as ByteBuffer)
-        writeAll(requestPipe.sink(), ByteBuffer.allocate(command.length).put(command.toByteArray()).flip() as ByteBuffer)
-        var buffer = ByteBuffer.allocate(4)
-        if (!readAll(resultPipe.source(), buffer)) return null
+        var buffer: ByteBuffer
+        val size: Int
+        try {
+            writeAll(requestPipe.sink(), ByteBuffer.allocate(4).putInt(command.length).flip() as ByteBuffer)
+            writeAll(requestPipe.sink(), ByteBuffer.allocate(command.length).put(command.toByteArray()).flip() as ByteBuffer)
+            buffer = ByteBuffer.allocate(4)
+            if (!readAll(resultPipe.source(), buffer)) return null
 
-        buffer.flip()
-        val size = buffer.int
-        buffer = ByteBuffer.allocate(size)
-        readAll(resultPipe.source(), buffer)
+            buffer.flip()
+            size = buffer.int
+            buffer = ByteBuffer.allocate(size)
+            readAll(resultPipe.source(), buffer)
+        } catch (e: Exception) {
+            return null
+        }
 
         val arr = ByteArray(size)
         buffer.flip()
