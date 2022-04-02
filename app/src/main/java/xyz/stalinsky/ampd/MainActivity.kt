@@ -306,10 +306,8 @@ class MainActivity : ComponentActivity() {
             playingState.value = state
         }
 
-        private var state = SessionPlayer.BUFFERING_STATE_UNKNOWN
-
         override fun onBufferingStateChanged(controller: MediaController, item: MediaItem, state: Int) {
-            if ((state == SessionPlayer.BUFFERING_STATE_BUFFERING_AND_PLAYABLE || state == SessionPlayer.BUFFERING_STATE_BUFFERING_AND_STARVED) && (this.state != SessionPlayer.BUFFERING_STATE_BUFFERING_AND_PLAYABLE && this.state != SessionPlayer.BUFFERING_STATE_BUFFERING_AND_STARVED)) {
+            if ((state == SessionPlayer.BUFFERING_STATE_BUFFERING_AND_PLAYABLE || state == SessionPlayer.BUFFERING_STATE_BUFFERING_AND_STARVED)) {
                 updateBufferedProgressJob = lifecycle.coroutineScope.launch {
                     while (true) {
                         // 24 fps
@@ -317,17 +315,12 @@ class MainActivity : ComponentActivity() {
                         bufferedState.value = controller.bufferedPosition
                     }
                 }
-            } else if (state == SessionPlayer.BUFFERING_STATE_COMPLETE && (this.state == SessionPlayer.BUFFERING_STATE_BUFFERING_AND_PLAYABLE || this.state == SessionPlayer.BUFFERING_STATE_BUFFERING_AND_STARVED)) {
+            } else if (state == SessionPlayer.BUFFERING_STATE_COMPLETE) {
                 updateBufferedProgressJob?.cancel()
+                bufferedState.value = controller.bufferedPosition
                 updateBufferedProgressJob = null
             }
-
-            this.state = state
-
-            Log.i("MainActivity", "BUFFER: $state")
-            if (state == SessionPlayer.BUFFERING_STATE_COMPLETE) Log.i("MainActivity", "BUFFERED!")
         }
-
 
         override fun onChildrenChanged(browser: MediaBrowser, parentId: String, itemCount: Int, params: MediaLibraryService.LibraryParams?) {
             when {
