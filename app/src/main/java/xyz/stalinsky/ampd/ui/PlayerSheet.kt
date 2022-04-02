@@ -2,13 +2,17 @@ package xyz.stalinsky.ampd.ui
 
 import android.graphics.Bitmap
 import androidx.activity.compose.BackHandler
+import androidx.compose.animation.core.Transition
+import androidx.compose.animation.core.animateFloat
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.Orientation
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material.*
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.List
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -32,11 +36,15 @@ import xyz.stalinsky.ampd.R
 import xyz.stalinsky.ampd.Song
 import kotlin.math.roundToLong
 
+// Terminology:
+// Redacted: The lowest level of player consisting of only the title, the artist and a play/pause button; Can be swiped to expanded state
+// Expanded: The widget that has the seek bar; Can be swiped to redacted
+// Extended: The highest level; should be full screen, consists of the playlist
 @ExperimentalMaterialApi
 @Composable
-fun PlayerSheet(enabled: Boolean,
-                state: Int,
+fun PlayerSheet(state: Int,
                 playlist: List<Pair<String, Song>>,
+                onChangeCurrentItemIndex: (Int) -> Unit,
                 currentItem: Pair<Int, Bitmap?>,
                 progress: Long,
                 swipeState: SwipeableState<Boolean>,
@@ -44,6 +52,8 @@ fun PlayerSheet(enabled: Boolean,
                 onPlayPause: () -> Unit,
                 onNext: () -> Unit,
                 onSeek: (Long) -> Unit,
+                transition: Transition<Boolean>,
+                onExtend: (Boolean) -> Unit,
                 modifier: Modifier) {
     val scope = rememberCoroutineScope()
     val threeHundredDp = with(LocalDensity.current) { 300.dp.toPx() }
@@ -56,37 +66,101 @@ fun PlayerSheet(enabled: Boolean,
         }
     }
 
-    Surface(modifier.swipeable(swipeState, mapOf(0f to false, -threeHundredDp to true), Orientation.Vertical, enabled).clickable(enabled) {
-        scope.launch {
-            swipeState.animateTo(!swipeState.currentValue)
+    Surface(modifier, elevation = 4.dp) {
+        val alpha = transition.animateFloat(label = "") {
+            if (it)
+                1.0f
+            else
+                0.0f
         }
-    }, elevation = 4.dp) {
-        Box(Modifier.fillMaxSize()) {
-            val palette = currentItem.second?.let {
-                Palette.from(it).generate()
+
+        if (transition.currentState || transition.isRunning) {
+            ConstraintLayout(Modifier.fillMaxSize()) {
+
+                val (closeConstraint, playlistConstraint) = createRefs()
+
+                IconButton({
+                    onExtend(false)
+                }, Modifier.constrainAs(closeConstraint) {
+                    top.linkTo(parent.top, 24.dp)
+                    end.linkTo(parent.end, 16.dp)
+                    width = Dimension.value(24.dp)
+                    height = Dimension.value(24.dp)
+                }) {
+                    Icon(Icons.Default.Close, "Close playlist")
+                }
+
+                LazyColumn(Modifier.alpha(alpha.value).constrainAs(playlistConstraint) {
+                    top.linkTo(closeConstraint.bottom)
+                    bottom.linkTo(parent.bottom)
+                    start.linkTo(parent.start)
+                    end.linkTo(parent.end)
+
+                    height = Dimension.fillToConstraints
+                    width = Dimension.fillToConstraints
+                }) {
+                    items(playlist.size) {
+                        ConstraintLayout(Modifier.height(72.dp).fillMaxWidth().clickable { onChangeCurrentItemIndex(it) }) {
+                            val (titleConstraint, artistConstraint) = createRefs()
+
+                            SingleLineText(playlist[it].second.title, Modifier
+                                .paddingFromBaseline(28.dp)
+                                .constrainAs(titleConstraint) {
+                                    top.linkTo(parent.top)
+                                    start.linkTo(parent.start, 16.dp)
+                                    end.linkTo(parent.end, 16.dp)
+                                    width = Dimension.fillToConstraints
+                            })
+
+                            SingleLineText(playlist[it].second.artist, Modifier.paddingFromBaseline(48.dp).constrainAs(artistConstraint) {
+                                top.linkTo(parent.top)
+                                start.linkTo(parent.start, 16.dp)
+                                end.linkTo(parent.end, 16.dp)
+
+                                width = Dimension.fillToConstraints
+                            })
+                        }
+                    }
+                }
             }
+        }
 
-            val currentItemIndex = currentItem.first
-            val title = if (currentItemIndex != -1) playlist[currentItemIndex].second.title else ""
-            val artist = if (currentItemIndex != -1) playlist[currentItemIndex].second.title else ""
-            val duration = if (currentItemIndex != -1) playlist[currentItemIndex].second.duration else 0
+        if (!transition.currentState || transition.isRunning) {
+            Box(Modifier.fillMaxSize().swipeable(swipeState, mapOf(0f to false, -threeHundredDp to true), Orientation.Vertical).clickable {
+                scope.launch {
+                    swipeState.animateTo(!swipeState.currentValue)
+                }
+            }) {
+                val palette = currentItem.second?.let {
+                    Palette.from(it).generate()
+                }
 
-            if (swipeState.direction != 0f || !swipeState.currentValue) {
-                RedactedPlayer(title, artist, 1 + swipeState.offset.value / threeHundredDp, state, Color(palette?.getDarkVibrantColor(0) ?: 0), onPlayPause)
-            }
+                val currentItemIndex = currentItem.first
+                val title = if (currentItemIndex != -1) playlist[currentItemIndex].second.title else ""
+                val artist = if (currentItemIndex != -1) playlist[currentItemIndex].second.title else ""
+                val duration = if (currentItemIndex != -1) playlist[currentItemIndex].second.duration else 0
 
-            if (swipeState.direction != 0f || swipeState.currentValue) {
-                ExpandedPlayer(title,
-                    artist,
-                    currentItem.second,
-                    -swipeState.offset.value / threeHundredDp,
-                    state,
-                    progress,
-                    duration,
-                    onPrev,
-                    onPlayPause,
-                    onNext,
-                    onSeek)
+                // TODO: For some reason swipeState.direction doesn't get reset to 0f when there is no swiping/animation causing ExpandedPlayer to react to
+                // user interaction when it should be hidden
+                if (swipeState.direction != 0f || !swipeState.currentValue) {
+                    RedactedPlayer(title, artist, 1 + swipeState.offset.value / threeHundredDp, state, Color(palette?.getDarkVibrantColor(0) ?: 0), onPlayPause)
+                }
+
+                if (swipeState.direction != 0f || swipeState.currentValue) {
+                    ExpandedPlayer(title,
+                        artist,
+                        currentItem.second,
+                        -swipeState.offset.value / threeHundredDp - alpha.value,
+                        state,
+                        progress,
+                        duration,
+                        onPrev,
+                        onPlayPause,
+                        onNext,
+                        onSeek) {
+                            onExtend(true)
+                        }
+                }
             }
         }
     }
@@ -141,7 +215,8 @@ fun ExpandedPlayer(title: String,
                    onPrev: () -> Unit,
                    onPlayPause: () -> Unit,
                    onNext: () -> Unit,
-                   onSeek: (Long) -> Unit) {
+                   onSeek: (Long) -> Unit,
+                   onExtend: () -> Unit) {
     if (alpha > 0f) {
         ConstraintLayout(Modifier.fillMaxWidth().height(372.dp).alpha(alpha)) {
             val (imageConstraint, titleConstraint, artistConstraint, seekBarConstraint, playlistButtonConstraint, backConstraint, playConstraint, forwardConstraint) = createRefs()
@@ -174,7 +249,7 @@ fun ExpandedPlayer(title: String,
                 end.linkTo(parent.end, 16.dp)
             }, style = MaterialTheme.typography.subtitle1)
 
-            SeekBar(progress = progress, buffered = 0, max = duration, onSeek = onSeek, Modifier.constrainAs(seekBarConstraint) {
+            SeekBar(progress, 0, duration, onSeek, Modifier.constrainAs(seekBarConstraint) {
                 bottom.linkTo(playConstraint.top, 16.dp)
                 start.linkTo(parent.start, 16.dp)
                 end.linkTo(parent.end, 16.dp)
@@ -182,7 +257,7 @@ fun ExpandedPlayer(title: String,
                 width = Dimension.fillToConstraints
             })
 
-            IconButton(onClick = { /*TODO*/ }, Modifier.constrainAs(playlistButtonConstraint) {
+            IconButton(onExtend, Modifier.constrainAs(playlistButtonConstraint) {
                 top.linkTo(parent.top, 24.dp)
                 end.linkTo(parent.end, 16.dp)
                 width = Dimension.value(24.dp)
@@ -191,7 +266,7 @@ fun ExpandedPlayer(title: String,
                 Icon(Icons.Default.List, "Playlist")
             }
 
-            IconButton(onClick = onPrev, Modifier.constrainAs(backConstraint) {
+            IconButton(onPrev, Modifier.constrainAs(backConstraint) {
                 start.linkTo(parent.start)
                 end.linkTo(playConstraint.start)
                 bottom.linkTo(parent.bottom, 24.dp)
@@ -202,7 +277,7 @@ fun ExpandedPlayer(title: String,
                 Icon(ImageVector.vectorResource(R.drawable.baseline_skip_previous_black_24dp), "Previous")
             }
 
-            IconButton(onClick = onPlayPause, Modifier.constrainAs(playConstraint) {
+            IconButton(onPlayPause, Modifier.constrainAs(playConstraint) {
                 start.linkTo(backConstraint.end)
                 end.linkTo(forwardConstraint.start)
                 bottom.linkTo(parent.bottom, 24.dp)
@@ -213,7 +288,7 @@ fun ExpandedPlayer(title: String,
                 else Icon(ImageVector.vectorResource(R.drawable.baseline_pause_black_24dp), "Pause")
             }
 
-            IconButton(onClick = onNext, Modifier.constrainAs(forwardConstraint) {
+            IconButton(onNext, Modifier.constrainAs(forwardConstraint) {
                 start.linkTo(playConstraint.end)
                 end.linkTo(parent.end)
                 bottom.linkTo(parent.bottom, 24.dp)

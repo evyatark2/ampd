@@ -29,7 +29,6 @@ import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.constraintlayout.compose.ConstraintLayout
@@ -162,8 +161,12 @@ class MainActivity : ComponentActivity() {
                             }, executor)
                         }, executor)
                     }, {
-                        if (playingState.value == SessionPlayer.PLAYER_STATE_PAUSED) controller.play()
-                        else if (playingState.value == SessionPlayer.PLAYER_STATE_PLAYING) controller.pause()
+                        controller.skipToPlaylistItem(it)
+                    }, {
+                        if (playingState.value == SessionPlayer.PLAYER_STATE_PAUSED)
+                            controller.play()
+                        else if (playingState.value == SessionPlayer.PLAYER_STATE_PLAYING)
+                            controller.pause()
                     }, { controller.skipToPreviousPlaylistItem() }, { controller.skipToNextPlaylistItem() }, {
                         updateSongProgressJob?.cancel()
                         updateSongProgressJob = null
@@ -423,6 +426,7 @@ fun Main(connectionFlow: StateFlow<MusicService.ConnectionState>,
          screenFlow: StateFlow<Screen>,
          playerState: PlayerState,
          setPlaylist: (List<String>, Int) -> Unit,
+         setCurrentItemIndex: (Int) -> Unit,
          onPlayPause: () -> Unit,
          onPrev: () -> Unit,
          onNext: () -> Unit,
@@ -442,7 +446,7 @@ fun Main(connectionFlow: StateFlow<MusicService.ConnectionState>,
         val pagerState = rememberPagerState()
         val swipeState = rememberSwipeableState(false)
 
-        Box(Modifier.fillMaxSize()) {
+        BoxWithConstraints(Modifier.fillMaxSize()) {
             val transition = updateTransition(playerVisible, label = "")
             val playerHeight = transition.animateDp({ tween() }, label = "") {
                 if (it) 72.dp
@@ -627,6 +631,15 @@ fun Main(connectionFlow: StateFlow<MusicService.ConnectionState>,
 
             val justOffScreen = with(LocalDensity.current) { 72.dp.roundToPx() }
 
+            var extended by remember { mutableStateOf(false) }
+            val extendTransition = updateTransition(extended, "")
+            val height = extendTransition.animateDp(label = "label1") {
+                if (it)
+                    maxHeight
+                else
+                    playerHeight.value - swipeOffsetDp
+            }
+
             transition.AnimatedVisibility({ it },
                 enter = slideInVertically(tween()) { justOffScreen },
                 exit = slideOutVertically(tween()) { justOffScreen },
@@ -634,10 +647,9 @@ fun Main(connectionFlow: StateFlow<MusicService.ConnectionState>,
                 val playlist by playerState.playlist.collectAsState()
                 val current by playerState.current.collectAsState()
                 val progress by playerState.progress.collectAsState()
-                //val duration by playerState.duration.collectAsState()
-                PlayerSheet(playerVisible,
-                    playingState,
+                PlayerSheet(playingState,
                     playlist,
+                    setCurrentItemIndex,
                     current,
                     progress,
                     swipeState,
@@ -645,7 +657,9 @@ fun Main(connectionFlow: StateFlow<MusicService.ConnectionState>,
                     onPlayPause,
                     onNext,
                     onSeek,
-                    Modifier.height(playerHeight.value - swipeOffsetDp))
+                    extendTransition, {
+                        extended = it
+                    }, Modifier.height(height.value))
             }
         }
     }
