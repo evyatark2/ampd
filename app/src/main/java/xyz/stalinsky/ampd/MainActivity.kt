@@ -369,7 +369,16 @@ class MainActivity : ComponentActivity() {
                                 screenState.value = Screen.AlbumScreen(it.metadata?.getString(MediaMetadata.METADATA_KEY_MEDIA_ID)!!,
                                     it.metadata?.getString(MediaMetadata.METADATA_KEY_TITLE)!!,
                                     it.metadata?.getString(MediaMetadata.METADATA_KEY_ALBUM_ART_URI),
-                                    MutableStateFlow(null))
+                                    MutableStateFlow(null), {
+                                        val current = browser.currentMediaItemIndex
+                                        browser.addPlaylistItem(current + 1, (screenState.value as Screen.AlbumScreen).tracks.value!![it].first).addListener({
+                                            if (current == -1)
+                                                browser.play().get()
+                                        }, executor)
+                                    }, {
+                                        browser.addPlaylistItem(browser.playlist?.size ?: 0, (screenState.value as Screen.AlbumScreen).tracks.value!![it].first).get()
+                                    }, {
+                                    })
                                 browser.subscribe(it.metadata?.getString(MediaMetadata.METADATA_KEY_MEDIA_ID)!!, params)
                             }
                         }
@@ -407,7 +416,8 @@ class MainActivity : ComponentActivity() {
                     }
 
                     val screen = screenState.value
-                    if (screen is Screen.AlbumScreen) (screen.tracks as MutableStateFlow).value = children
+                    if (screen is Screen.AlbumScreen)
+                            (screen.tracks as MutableStateFlow).value = children
                 }
             }
         }
@@ -611,7 +621,7 @@ fun Main(connectionFlow: StateFlow<MusicService.ConnectionState>,
                                     Column(Modifier.fillMaxSize().padding(top = redactedHeight).verticalScroll(scrollState)) {
                                         Spacer(Modifier.height(heightDifference))
                                         tracks.forEachIndexed { i, track ->
-                                            TrackView(track.second, showDisc, Modifier.clickable {
+                                            TrackView(track.second, showDisc, { screen.onPlayNext(i) }, { screen.onAddToQueue(i) }, { screen.onGoToArtist(i) }, Modifier.clickable {
                                                 setPlaylist(tracks.map { it.first }, i)
                                             })
                                         }
@@ -713,40 +723,67 @@ fun AlbumView(album: Album, onClick: () -> Unit) {
 }
 
 @Composable
-fun TrackView(track: Track, showDisc: Boolean, modifier: Modifier = Modifier) {
-    ConstraintLayout(modifier.fillMaxWidth().height(88.dp)) {
-        val (trackConstraint, titleConstraint, artistConstraint, buttonConstraint) = createRefs()
+fun TrackView(track: Track, showDisc: Boolean, onPlayNext: () -> Unit, onAddToQueue: () -> Unit, onGoToArtist: () -> Unit, modifier: Modifier = Modifier) {
+    Box(modifier.fillMaxWidth().height(88.dp)) {
+        ConstraintLayout(modifier.fillMaxSize()) {
+            val (trackConstraint, titleConstraint, artistConstraint, buttonConstraint) = createRefs()
 
-        SingleLineText(if (showDisc) "${track.disc}-${track.track}" else track.track.toString(), Modifier.constrainAs(trackConstraint) {
-            top.linkTo(parent.top)
-            bottom.linkTo(parent.bottom)
-            start.linkTo(parent.start, 16.dp)
-        }, style = MaterialTheme.typography.subtitle2)
+            SingleLineText(if (showDisc) "${track.disc}-${track.track}" else track.track.toString(), Modifier.constrainAs(trackConstraint) {
+                top.linkTo(parent.top)
+                bottom.linkTo(parent.bottom)
+                start.linkTo(parent.start, 16.dp)
+            }, style = MaterialTheme.typography.subtitle2)
 
-        SingleLineText(track.title, Modifier.paddingFromBaseline(40.dp).constrainAs(titleConstraint) {
-            top.linkTo(parent.top)
-            start.linkTo(trackConstraint.end, 16.dp)
-            end.linkTo(buttonConstraint.start, 16.dp)
+            SingleLineText(track.title, Modifier.paddingFromBaseline(40.dp).constrainAs(titleConstraint) {
+                top.linkTo(parent.top)
+                start.linkTo(trackConstraint.end, 16.dp)
+                end.linkTo(buttonConstraint.start, 16.dp)
 
-            width = Dimension.fillToConstraints
-        }, style = MaterialTheme.typography.subtitle1)
+                width = Dimension.fillToConstraints
+            }, style = MaterialTheme.typography.subtitle1)
 
-        SingleLineText(track.artist, Modifier.paddingFromBaseline(60.dp).constrainAs(artistConstraint) {
-            top.linkTo(parent.top)
-            start.linkTo(trackConstraint.end, 16.dp)
-            end.linkTo(buttonConstraint.start, 16.dp)
+            SingleLineText(track.artist, Modifier.paddingFromBaseline(60.dp).constrainAs(artistConstraint) {
+                top.linkTo(parent.top)
+                start.linkTo(trackConstraint.end, 16.dp)
+                end.linkTo(buttonConstraint.start, 16.dp)
 
-            width = Dimension.fillToConstraints
-        }, style = MaterialTheme.typography.caption)
+                width = Dimension.fillToConstraints
+            }, style = MaterialTheme.typography.caption)
 
-        IconButton(onClick = {
+            Box(Modifier.constrainAs(buttonConstraint) {
+                    top.linkTo(parent.top)
+                    bottom.linkTo(parent.bottom)
+                    end.linkTo(parent.end, 16.dp)
+                }) {
 
-        }, Modifier.constrainAs(buttonConstraint) {
-            top.linkTo(parent.top)
-            bottom.linkTo(parent.bottom)
-            end.linkTo(parent.end, 16.dp)
-        }) {
-            Icon(Icons.Default.MoreVert, contentDescription = "More")
+                var expanded by remember { mutableStateOf(false) }
+                IconButton(onClick = {
+                    expanded = true
+                }, ) {
+                    Icon(Icons.Default.MoreVert, contentDescription = "More")
+                }
+
+                DropdownMenu(expanded, onDismissRequest = { expanded = false }) {
+                    DropdownMenuItem({
+                        onPlayNext()
+                        expanded = false
+                    }) {
+                        Text("Play next")
+                    }
+                    DropdownMenuItem({
+                        onAddToQueue()
+                        expanded = false
+                    }) {
+                        Text("Add to queue")
+                    }
+                    DropdownMenuItem({
+                        onGoToArtist()
+                        expanded = false
+                    }) {
+                        Text("Go to album")
+                    }
+                }
+            }
         }
     }
 }
@@ -759,7 +796,7 @@ sealed interface Screen {
                        val albums: StateFlow<List<Pair<String, Album>>?>,
                        val songs: StateFlow<List<Pair<String, Song>>?>) : Screen
 
-    class AlbumScreen(val id: String, val albumTitle: String, val art: String?, val tracks: StateFlow<List<Pair<String, Track>>?>) : Screen
+    class AlbumScreen(val id: String, val albumTitle: String, val art: String?, val tracks: StateFlow<List<Pair<String, Track>>?>, val onPlayNext: (Int) -> Unit, val onAddToQueue: (Int) -> Unit, val onGoToArtist: (Int) -> Unit) : Screen
 }
 
 data class PlayerState(val state: StateFlow<Int>,
