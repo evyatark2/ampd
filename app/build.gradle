@@ -2,6 +2,13 @@ plugins {
     id 'com.android.application'
     id 'kotlin-android'
     id 'kotlin-parcelize'
+    id 'idea'
+}
+
+idea {
+    module {
+        downloadSources = true
+    }
 }
 
 android {
@@ -59,17 +66,28 @@ dependencies {
     implementation "androidx.compose.runtime:runtime-livedata:$compose_version"
     implementation 'androidx.lifecycle:lifecycle-runtime-ktx:2.4.1'
     implementation 'androidx.activity:activity-compose:1.4.0'
-    implementation 'com.google.accompanist:accompanist-pager:0.20.3'
-    implementation "com.google.accompanist:accompanist-pager-indicators:0.20.3"
+
+    // Accompanist
+    implementation 'com.google.accompanist:accompanist-pager:0.23.1'
+    implementation "com.google.accompanist:accompanist-pager-indicators:0.23.1"
+
     implementation "androidx.constraintlayout:constraintlayout-compose:1.0.0"
+
+    // Media2
     implementation "androidx.media2:media2-session:$media2_version"
+
+    // Guava
     implementation "com.google.guava:guava:31.0.1-android"
-    implementation "com.squareup.okhttp3:okhttp:4.9.3"
+
+    // ExoPlayer
     implementation 'com.google.android.exoplayer:exoplayer-core:2.17.1'
     implementation 'com.google.android.exoplayer:extension-media2:2.17.1'
-    implementation 'com.google.android.exoplayer:extension-okhttp:2.17.1'
+
     implementation "com.android.support:palette-v7:31.0.0"
-    implementation "com.github.skydoves:landscapist-glide:1.4.4"
+
+    // Landscapist
+    implementation "com.github.skydoves:landscapist-glide:1.5.0"
+
     implementation 'androidx.preference:preference-ktx:1.2.0'
     testImplementation 'junit:junit:4.+'
     androidTestImplementation 'androidx.test.ext:junit:1.1.3'
