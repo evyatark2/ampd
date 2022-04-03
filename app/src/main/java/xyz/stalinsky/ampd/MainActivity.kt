@@ -142,7 +142,7 @@ class MainActivity : ComponentActivity() {
                         if (screen is Screen.AlbumScreen) controller.unsubscribe(screen.id)
 
                         screenState.value = backstack.pop()
-                    }, screenState, PlayerState(playingState, playlistState, currentItemState, progressState, bufferedState), { playlist, index ->
+                    }, screenState, PlayerState(playingState, playlistState, currentItemState, progressState, bufferedState),{ playlist, index ->
                         controller.setPlaylist(playlist, null).addListener({
                             controller.skipToPlaylistItem(index).addListener({
                                 if (controller.playerState == SessionPlayer.PLAYER_STATE_IDLE) {
@@ -161,19 +161,14 @@ class MainActivity : ComponentActivity() {
                             controller.play()
                         else if (playingState.value == SessionPlayer.PLAYER_STATE_PLAYING)
                             controller.pause()
-                    }, { controller.skipToPreviousPlaylistItem() }, { controller.skipToNextPlaylistItem() }, {
+                    }, {
+                        controller.skipToPreviousPlaylistItem()
+                    }, { // onSkipToNext
+                        controller.skipToNextPlaylistItem()
+                    }, { // onSeek
                         updateSongProgressJob?.cancel()
                         updateSongProgressJob = null
-                        progressState.value = it
-                        controller.seekTo(it).addListener({
-                            updateSongProgressJob = lifecycle.coroutineScope.launch {
-                                while (true) {
-                                    // 24 fps
-                                    delay(42)
-                                    progressState.value = controller.currentPosition
-                                }
-                            }
-                        }, executor)
+                        controller.seekTo(it)
                     }) {
                         startActivity(Intent(this, SettingsActivity::class.java))
                     }
@@ -225,6 +220,11 @@ class MainActivity : ComponentActivity() {
             currentItemState.value = controller.currentMediaItemIndex
         }
 
+        override fun onSeekCompleted(controller: MediaController, position: Long) {
+            if (playingState.value == SessionPlayer.PLAYER_STATE_PLAYING)
+                startSongProgressUpdate()
+        }
+
         override fun onCustomCommand(controller: MediaController, command: SessionCommand, args: Bundle?): SessionResult {
             when (command) {
                 MusicService.COMMAND_MPD_CONNECTION_STATUS_CHANGED -> {
@@ -272,13 +272,7 @@ class MainActivity : ComponentActivity() {
                 }
 
                 SessionPlayer.PLAYER_STATE_PLAYING -> {
-                    updateSongProgressJob = lifecycle.coroutineScope.launch {
-                        while (true) {
-                            // 24 fps
-                            delay(42)
-                            progressState.value = controller.currentPosition
-                        }
-                    }
+                    startSongProgressUpdate()
                 }
             }
 
@@ -397,6 +391,16 @@ class MainActivity : ComponentActivity() {
                     val screen = screenState.value
                     if (screen is Screen.AlbumScreen)
                             (screen.tracks as MutableStateFlow).value = children
+                }
+            }
+        }
+
+        private fun startSongProgressUpdate() {
+            updateSongProgressJob = lifecycle.coroutineScope.launch {
+                while (true) {
+                    // 24 fps
+                    delay(42)
+                    progressState.value = controller.currentPosition
                 }
             }
         }
