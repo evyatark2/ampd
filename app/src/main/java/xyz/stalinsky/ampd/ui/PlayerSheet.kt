@@ -167,10 +167,10 @@ fun PlayerSheet(state: Int,
                     val artist = currentItem.second.title
                     val duration = currentItem.second.duration
 
-                    // TODO: For some reason swipeState.direction doesn't get reset to 0f when there is no swiping/animation causing ExpandedPlayer to react to
-                    // TODO: user interaction when it should be hidden
+                    // TODO: For some reason swipeState.direction doesn't get reset to 0f when there is no swiping/animation causing
+                    // TODO: ExpandedPlayer to react to user interaction when it should be hidden
                     if (swipeState.direction != 0f || !swipeState.currentValue) {
-                        RedactedPlayer(title, artist, 1 + swipeState.offset.value / threeHundredDp, state, Color(palette.getDarkVibrantColor(0)), onPlayPause)
+                        RedactedPlayer(title, artist, state, onPlayPause, Modifier.fillMaxWidth().height(372.dp).background(Color(palette.getDarkVibrantColor(0))).alpha(1 + swipeState.offset.value / threeHundredDp))
                     }
 
                     if (swipeState.direction != 0f || swipeState.currentValue) {
@@ -194,10 +194,9 @@ fun PlayerSheet(state: Int,
 }
 
 @Composable
-fun RedactedPlayer(title: String, artist: String, alpha: Float, playerState: Int, color: Color?, onPlayPause: () -> Unit) {
-    val modifier = if (color != null) Modifier.background(color) else Modifier
-    Box(modifier.height(372.dp)) {
-        ConstraintLayout(Modifier.fillMaxWidth().height(72.dp).alpha(alpha)) {
+fun RedactedPlayer(title: String, artist: String, playerState: Int, onPlayPause: () -> Unit, modifier: Modifier) {
+    Box(modifier) {
+        ConstraintLayout(Modifier.fillMaxWidth().height(72.dp)) {
             val (titleConstraint, artistConstraint, buttonConstraint) = createRefs()
 
             SingleLineText(title, Modifier.paddingFromBaseline(28.dp).constrainAs(titleConstraint) {
