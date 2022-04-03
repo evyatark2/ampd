@@ -3,9 +3,6 @@ package xyz.stalinsky.ampd
 import android.content.ComponentName
 import android.content.Intent
 import android.content.SharedPreferences
-import android.graphics.Bitmap
-import android.graphics.drawable.Drawable
-import android.net.Uri
 import android.os.Bundle
 import android.util.Log
 import androidx.activity.ComponentActivity
@@ -39,11 +36,8 @@ import androidx.media2.common.MediaMetadata
 import androidx.media2.common.SessionPlayer
 import androidx.media2.session.*
 import androidx.preference.PreferenceManager
-import com.bumptech.glide.Glide
 import com.bumptech.glide.load.engine.DiskCacheStrategy
 import com.bumptech.glide.request.RequestOptions
-import com.bumptech.glide.request.target.CustomTarget
-import com.bumptech.glide.request.transition.Transition
 import com.google.accompanist.pager.ExperimentalPagerApi
 import com.google.accompanist.pager.HorizontalPager
 import com.google.accompanist.pager.pagerTabIndicatorOffset
@@ -75,7 +69,7 @@ class MainActivity : ComponentActivity() {
     private val bufferedState = MutableStateFlow(0L)
 
     private val playlistState: MutableStateFlow<List<Pair<String, Song>>> = MutableStateFlow(listOf())
-    private val currentItemState: MutableStateFlow<Pair<Int, Bitmap?>> = MutableStateFlow(Pair(-1, null))
+    private val currentItemState: MutableStateFlow<Int> = MutableStateFlow(-1)
 
     // This is a map that represents the main view window
     // The key is the mediaId of a root mediaItem e.g. "/artists"
@@ -210,7 +204,7 @@ class MainActivity : ComponentActivity() {
                         it.metadata?.getString((MediaMetadata.METADATA_KEY_ALBUM_ART_URI))))
             } ?: listOf()
 
-            currentItemState.value = Pair(controller.currentMediaItemIndex, null) // TODO: Use Glide to load the current item's art
+            currentItemState.value = controller.currentMediaItemIndex
 
             controller.sendCustomCommand(MusicService.COMMAND_SET_MEDIA_LIBRARY,
                 Bundle().apply { putString(MusicService.COMMAND_ARG_MEDIA_LIBRARY, mediaLibrary) }).addListener({
@@ -228,20 +222,7 @@ class MainActivity : ComponentActivity() {
         }
 
         override fun onCurrentMediaItemChanged(controller: MediaController, item: MediaItem?) {
-            currentItemState.value = Pair(controller.currentMediaItemIndex, null)
-
-            val uri = item?.metadata?.getString(MediaMetadata.METADATA_KEY_ALBUM_ART_URI)
-
-            // Load the current media item's album art
-            Glide.with(this@MainActivity).asBitmap().load(if (uri != null) Uri.parse(uri) else null).into(object : CustomTarget<Bitmap>() {
-                override fun onResourceReady(resource: Bitmap, transition: Transition<in Bitmap>?) {
-                    currentItemState.value = Pair(currentItemState.value.first, resource)
-                }
-
-                override fun onLoadCleared(placeholder: Drawable?) {
-                    TODO("Not yet implemented")
-                }
-            })
+            currentItemState.value = controller.currentMediaItemIndex
         }
 
         override fun onCustomCommand(controller: MediaController, command: SessionCommand, args: Bundle?): SessionResult {
@@ -581,14 +562,17 @@ fun Main(connectionFlow: StateFlow<MusicService.ConnectionState>,
 
                         val scrollState = rememberScrollState()
 
-                        Box(Modifier.fillMaxSize()) {
+                        val imageHeight = with(LocalDensity.current) { expandedHeight.toPx().roundToInt() }
+
+                        BoxWithConstraints(Modifier.fillMaxSize()) {
+                            val imageWidth = with(LocalDensity.current) { maxWidth.toPx().roundToInt() }
                             val offset = max(minOffset, -scrollState.value.toFloat())
                             val offsetProgress = min(0f, offset * 3f - minOffset * 2f) / (minOffset)
                             TopAppBar(Modifier.fillMaxWidth().offset { IntOffset(0, offset.roundToInt()) }.height(expandedHeight),
                                 elevation = if (offset <= minOffset) 4.dp else 0.dp) {
                                 Box(Modifier.fillMaxSize()) {
                                     GlideImage(screen.art, Modifier.fillMaxSize().alpha(1f - offsetProgress), requestOptions = {
-                                        RequestOptions().diskCacheStrategy(DiskCacheStrategy.RESOURCE)
+                                        RequestOptions().override(imageWidth, imageHeight).diskCacheStrategy(DiskCacheStrategy.RESOURCE)
                                     }, contentScale = ContentScale.Crop)
 
                                     SingleLineText(screen.albumTitle,
@@ -653,8 +637,9 @@ fun Main(connectionFlow: StateFlow<MusicService.ConnectionState>,
                 val progress by playerState.progress.collectAsState()
                 PlayerSheet(playingState,
                     playlist,
-                    setCurrentItemIndex,
                     current,
+                    setCurrentItemIndex,
+                    { _, _ -> },
                     progress,
                     swipeState,
                     onPrev,
@@ -684,22 +669,18 @@ fun ArtistView(name: String, onClick: () -> Unit) {
 
 @Composable
 fun AlbumView(album: Album, onClick: () -> Unit) {
-    ConstraintLayout(Modifier.clickable(onClick = onClick).height(64.dp).fillMaxWidth()) {
+    ConstraintLayout(Modifier.clickable(onClick = onClick).height(72.dp).fillMaxWidth()) {
         val (artConstraint, titleConstraint, artistConstraint) = createRefs()
 
-        val fortyDp = with(LocalDensity.current) {
-            40.dp.toPx().roundToInt()
-        }
-
         GlideImage(album.art, Modifier.constrainAs(artConstraint) {
-            top.linkTo(parent.top, 16.dp)
-            bottom.linkTo(parent.bottom, 16.dp)
+            top.linkTo(parent.top)
+            bottom.linkTo(parent.bottom)
             start.linkTo(parent.start, 16.dp)
 
             width = Dimension.value(40.dp)
             height = Dimension.value(40.dp)
         }, requestOptions = {
-            RequestOptions().override(fortyDp, fortyDp).diskCacheStrategy(DiskCacheStrategy.RESOURCE)
+            RequestOptions().override(with(LocalDensity.current) { 40.dp.toPx().roundToInt() }).diskCacheStrategy(DiskCacheStrategy.RESOURCE)
         }, contentScale = ContentScale.Crop)
 
         SingleLineText(album.title, Modifier.paddingFromBaseline(28.dp).constrainAs(titleConstraint) {
@@ -799,6 +780,6 @@ sealed interface Screen {
 
 data class PlayerState(val state: StateFlow<Int>,
                        val playlist: StateFlow<List<Pair<String, Song>>>,
-                       val current: StateFlow<Pair<Int, Bitmap?>>,
+                       val current: StateFlow<Int>,
                        val progress: StateFlow<Long>,
                        val buffered: StateFlow<Long>)
