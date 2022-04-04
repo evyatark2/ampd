@@ -222,6 +222,7 @@ class MainActivity : ComponentActivity() {
         }
 
         override fun onSeekCompleted(controller: MediaController, position: Long) {
+            progressState.value = position
             if (playingState.value == SessionPlayer.PLAYER_STATE_PLAYING)
                 startSongProgressUpdate()
         }
