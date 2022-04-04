@@ -1,7 +1,6 @@
 package xyz.stalinsky.ampd.ui
 
 import android.graphics.Bitmap
-import android.graphics.drawable.Drawable
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.core.Transition
 import androidx.compose.animation.core.animateFloat
@@ -11,6 +10,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.Orientation
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.*
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
@@ -103,7 +103,7 @@ fun PlayerSheet(state: Int,
 
                     height = Dimension.fillToConstraints
                     width = Dimension.fillToConstraints
-                }) {
+                }, rememberLazyListState(currentItemIndex)) {
                     items(playlist.size) {
                         ConstraintLayout(Modifier.height(72.dp).fillMaxWidth().clickable { onChangeCurrentItemIndex(it) }) {
                             val (artConstraint, titleConstraint, artistConstraint) = createRefs()
@@ -144,7 +144,8 @@ fun PlayerSheet(state: Int,
         }
 
         if (!transition.currentState || transition.isRunning) {
-            val currentItem = if (currentItemIndex != -1)
+            // The second condition can fail when the playlist is still being updated but the index already reflects the new playlist
+            val currentItem = if (currentItemIndex != -1 && currentItemIndex < playlist.size)
                 playlist[currentItemIndex]
             else
                 Pair("", Song("", "", "", "" ,"" ,0, null))
@@ -220,8 +221,10 @@ fun RedactedPlayer(title: String, artist: String, playerState: Int, onPlayPause:
                 width = Dimension.value(24.dp)
                 height = Dimension.value(24.dp)
             }) {
-                if (playerState == SessionPlayer.PLAYER_STATE_PAUSED) Icon(ImageVector.vectorResource(R.drawable.baseline_play_arrow_black_24dp), "Play")
-                else Icon(ImageVector.vectorResource(R.drawable.baseline_pause_black_24dp), "Pause")
+                if (playerState != SessionPlayer.PLAYER_STATE_PLAYING)
+                    Icon(ImageVector.vectorResource(R.drawable.baseline_play_arrow_black_24dp), "Play")
+                else
+                    Icon(ImageVector.vectorResource(R.drawable.baseline_pause_black_24dp), "Pause")
 
             }
         }
@@ -303,8 +306,10 @@ fun ExpandedPlayer(title: String,
             width = Dimension.value(24.dp)
             height = Dimension.value(24.dp)
         }) {
-            if (playerState == SessionPlayer.PLAYER_STATE_PAUSED) Icon(ImageVector.vectorResource(R.drawable.baseline_play_arrow_black_24dp), "Play")
-            else Icon(ImageVector.vectorResource(R.drawable.baseline_pause_black_24dp), "Pause")
+            if (playerState != SessionPlayer.PLAYER_STATE_PLAYING)
+                Icon(ImageVector.vectorResource(R.drawable.baseline_play_arrow_black_24dp), "Play")
+            else
+                Icon(ImageVector.vectorResource(R.drawable.baseline_pause_black_24dp), "Pause")
         }
 
         IconButton(onNext, Modifier.constrainAs(forwardConstraint) {

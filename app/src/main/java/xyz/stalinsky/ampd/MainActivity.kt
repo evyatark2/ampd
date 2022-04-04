@@ -42,6 +42,7 @@ import com.google.accompanist.pager.ExperimentalPagerApi
 import com.google.accompanist.pager.HorizontalPager
 import com.google.accompanist.pager.pagerTabIndicatorOffset
 import com.google.accompanist.pager.rememberPagerState
+import com.google.common.util.concurrent.Futures
 import com.skydoves.landscapist.glide.GlideImage
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -142,7 +143,7 @@ class MainActivity : ComponentActivity() {
                         if (screen is Screen.AlbumScreen) controller.unsubscribe(screen.id)
 
                         screenState.value = backstack.pop()
-                    }, screenState, PlayerState(playingState, playlistState, currentItemState, progressState, bufferedState),{ playlist, index ->
+                    }, screenState, PlayerState(playingState, playlistState, currentItemState, progressState, bufferedState), { playlist, index ->
                         controller.setPlaylist(playlist, null).addListener({
                             controller.skipToPlaylistItem(index).addListener({
                                 if (controller.playerState == SessionPlayer.PLAYER_STATE_IDLE) {
@@ -157,7 +158,11 @@ class MainActivity : ComponentActivity() {
                     }, {
                         controller.skipToPlaylistItem(it)
                     }, {
-                        if (playingState.value == SessionPlayer.PLAYER_STATE_PAUSED)
+                        if (playingState.value == SessionPlayer.PLAYER_STATE_IDLE)
+                            controller.prepare().addListener({
+                                controller.play()
+                            }, executor)
+                        else if (playingState.value == SessionPlayer.PLAYER_STATE_PAUSED)
                             controller.play()
                         else if (playingState.value == SessionPlayer.PLAYER_STATE_PLAYING)
                             controller.pause()
@@ -344,15 +349,35 @@ class MainActivity : ComponentActivity() {
                                 screenState.value = Screen.AlbumScreen(it.metadata?.getString(MediaMetadata.METADATA_KEY_MEDIA_ID)!!,
                                     it.metadata?.getString(MediaMetadata.METADATA_KEY_TITLE)!!,
                                     it.metadata?.getString(MediaMetadata.METADATA_KEY_ALBUM_ART_URI),
-                                    MutableStateFlow(null), {
+                                    MutableStateFlow(null), { // onPlayAlbumNext
+                                        val current = browser.currentMediaItemIndex
+                                        // TODO: Lock the executor from running other playlist-mutating runnables while this future is running
+                                        var future = browser.addPlaylistItem(current + 1, (screenState.value as Screen.AlbumScreen).tracks.value!!.last().first)
+                                        (screenState.value as Screen.AlbumScreen).tracks.value?.asReversed()?.drop(1)?.forEach { track ->
+                                            future = Futures.transformAsync(future, {
+                                                browser.addPlaylistItem(current + 1, track.first)
+                                            }, executor)
+                                        }
+                                        future.addListener({
+                                            if (current == -1)
+                                                browser.play().get()
+                                        }, executor)
+                                    }, { // onAddAlbumToQueue
+                                        var future = browser.addPlaylistItem(browser.playlist?.size ?: 0, (screenState.value as Screen.AlbumScreen).tracks.value!!.first().first)
+                                        (screenState.value as Screen.AlbumScreen).tracks.value?.drop(1)?.forEach { track ->
+                                            future = Futures.transformAsync(future, {
+                                                browser.addPlaylistItem(browser.playlist?.size ?: 0, track.first)
+                                            }, executor)
+                                        }
+                                    }, { // onPlayNext
                                         val current = browser.currentMediaItemIndex
                                         browser.addPlaylistItem(current + 1, (screenState.value as Screen.AlbumScreen).tracks.value!![it].first).addListener({
                                             if (current == -1)
                                                 browser.play().get()
                                         }, executor)
-                                    }, {
+                                    }, { // onAddToQueue
                                         browser.addPlaylistItem(browser.playlist?.size ?: 0, (screenState.value as Screen.AlbumScreen).tracks.value!![it].first).get()
-                                    }, {
+                                    }, { // onGoToArtist
                                     })
                                 browser.subscribe(it.metadata?.getString(MediaMetadata.METADATA_KEY_MEDIA_ID)!!, params)
                             }
@@ -431,7 +456,7 @@ fun Main(connectionFlow: StateFlow<MusicService.ConnectionState>,
         Text("MPD CONNECTION FAILED")
     } else {
         val playingState by playerState.state.collectAsState()
-        val playerVisible = playingState == SessionPlayer.PLAYER_STATE_PAUSED || playingState == SessionPlayer.PLAYER_STATE_PLAYING
+        val playerVisible = playerState.current.collectAsState().value != -1
 
         val scope = rememberCoroutineScope()
         val pagerState = rememberPagerState()
@@ -591,8 +616,51 @@ fun Main(connectionFlow: StateFlow<MusicService.ConnectionState>,
                                 }
                             }
 
-                            IconButton(onBackPressed, Modifier.padding(16.dp).size(24.dp)) {
-                                Icon(Icons.Default.ArrowBack, "")
+                            ConstraintLayout(Modifier.fillMaxWidth().height(56.dp)) {
+                                val (backConstraint, moreConstraint) = createRefs()
+
+                                IconButton(onBackPressed, Modifier.constrainAs(backConstraint) {
+                                    start.linkTo(parent.start, 16.dp)
+                                    top.linkTo(parent.top)
+                                    bottom.linkTo(parent.bottom)
+
+                                    //width = Dimension.value(24.dp)
+                                    //height = 24.dp
+                                }) {
+                                    Icon(Icons.Default.ArrowBack, "")
+                                }
+
+                                Box(Modifier.constrainAs(moreConstraint) {
+                                    end.linkTo(parent.end, 16.dp)
+                                    top.linkTo(parent.top)
+                                    bottom.linkTo(parent.bottom)
+
+                                    //width = Dimension.value(24.dp)
+                                    //height = 24.dp
+                                }) {
+                                    var expanded by remember { mutableStateOf(false) }
+
+                                    IconButton({
+                                        expanded = true
+                                    }) {
+                                        Icon(Icons.Default.MoreVert, "")
+                                    }
+
+                                    DropdownMenu(expanded, onDismissRequest = { expanded = false }) {
+                                        DropdownMenuItem({
+                                            screen.onPlayAlbumNext()
+                                            expanded = false
+                                        }) {
+                                            Text("Play next")
+                                        }
+                                        DropdownMenuItem({
+                                            screen.onAddAlbumToQueue()
+                                            expanded = false
+                                        }) {
+                                            Text("Add to queue")
+                                        }
+                                    }
+                                }
                             }
 
                             val tracks = screen.tracks.collectAsState().value
@@ -781,7 +849,7 @@ sealed interface Screen {
                        val albums: StateFlow<List<Pair<String, Album>>?>,
                        val songs: StateFlow<List<Pair<String, Song>>?>) : Screen
 
-    class AlbumScreen(val id: String, val albumTitle: String, val art: String?, val tracks: StateFlow<List<Pair<String, Track>>?>, val onPlayNext: (Int) -> Unit, val onAddToQueue: (Int) -> Unit, val onGoToArtist: (Int) -> Unit) : Screen
+    class AlbumScreen(val id: String, val albumTitle: String, val art: String?, val tracks: StateFlow<List<Pair<String, Track>>?>, val onPlayAlbumNext: () -> Unit, val onAddAlbumToQueue: () -> Unit, val onPlayNext: (Int) -> Unit, val onAddToQueue: (Int) -> Unit, val onGoToArtist: (Int) -> Unit) : Screen
 }
 
 data class PlayerState(val state: StateFlow<Int>,
