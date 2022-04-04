@@ -218,6 +218,7 @@ class MainActivity : ComponentActivity() {
 
         override fun onCurrentMediaItemChanged(controller: MediaController, item: MediaItem?) {
             currentItemState.value = controller.currentMediaItemIndex
+            progressState.value = 0
         }
 
         override fun onSeekCompleted(controller: MediaController, position: Long) {
