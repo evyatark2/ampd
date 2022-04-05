@@ -199,7 +199,8 @@ class MusicService : MediaLibraryService() {
 
         @SuppressLint("RestrictedApi")
         override fun onSubscribe(session: MediaLibrarySession, controller: MediaSession.ControllerInfo, parentId: String, params: LibraryParams?): Int {
-            if (parentId.startsWith("/artists/") || parentId.startsWith("/albums/")) clients[controller]!!.push(Pair(parentId, mutableMapOf()))
+            if (parentId.startsWith("/artists/") || parentId.startsWith("/albums/"))
+                clients[controller]!!.push(Pair(parentId, mutableMapOf()))
 
             session.notifyChildrenChanged(controller, parentId, rootNodes.size, params)
 
@@ -208,7 +209,8 @@ class MusicService : MediaLibraryService() {
 
         @SuppressLint("RestrictedApi")
         override fun onUnsubscribe(session: MediaLibrarySession, controller: MediaSession.ControllerInfo, parentId: String): Int {
-            if (!clients[controller]!!.empty() && clients[controller]!!.peek().first != parentId) return LibraryResult.RESULT_ERROR_BAD_VALUE
+            if (!clients[controller]!!.empty() && clients[controller]!!.peek().first != parentId)
+                return LibraryResult.RESULT_ERROR_BAD_VALUE
 
             clients[controller]!!.pop()
 

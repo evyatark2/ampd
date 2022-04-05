@@ -72,11 +72,6 @@ class MainActivity : ComponentActivity() {
     private val playlistState: MutableStateFlow<List<Pair<String, Song>>> = MutableStateFlow(listOf())
     private val currentItemState: MutableStateFlow<Int> = MutableStateFlow(-1)
 
-    // This is a map that represents the main view window
-    // The key is the mediaId of a root mediaItem e.g. "/artists"
-    // The value is a pair where first is the name of the category e.g. "Artists"
-    // and second is a list of composeables used to render the list e.g.
-    // listOf(ArtistView("Beethoven"), ArtistView("The Beatles"))
     private var categories: MutableStateFlow<Map<String, Pair<String, MutableStateFlow<List<@Composable () -> Unit>?>>>?> = MutableStateFlow(null)
 
     private lateinit var controller: MediaBrowser
@@ -84,7 +79,9 @@ class MainActivity : ComponentActivity() {
     private val connectionState = MutableStateFlow(MusicService.ConnectionState.DISCONNECTED)
 
     private val backstack = Stack<Screen>()
-    private val screenState: MutableStateFlow<Screen> = MutableStateFlow(Screen.MainScreen(categories))
+    private val screenState: MutableStateFlow<Screen> = MutableStateFlow(Screen.MainScreen(categories) {
+        controller.sendCustomCommand(MusicService.COMMAND_CONNECT, null)
+    })
 
     private var mpdHost = ""
     private var mpdPort = -1
@@ -248,6 +245,20 @@ class MainActivity : ComponentActivity() {
 
                         MusicService.ConnectionState.DISCONNECTED -> {
                             connectionState.value = MusicService.ConnectionState.DISCONNECTED
+                            var screen = screenState.value
+                            while (backstack.isNotEmpty()) {
+                                if (screen is Screen.AlbumScreen)
+                                    (controller as MediaBrowser).unsubscribe(screen.id)
+                                else if (screen is Screen.ArtistScreen)
+                                    (controller as MediaBrowser).unsubscribe(screen.id)
+
+                                screen = backstack.pop()
+                            }
+
+                            categories.value = null
+                            screenState.value = Screen.MainScreen(categories) {
+                                controller.sendCustomCommand(MusicService.COMMAND_CONNECT, null)
+                            }
                         }
                     }
                 }
@@ -449,281 +460,299 @@ fun Main(connectionFlow: StateFlow<MusicService.ConnectionState>,
          onSeek: (Long) -> Unit,
          onSettings: () -> Unit) {
     val screen = screenFlow.collectAsState().value
-    if (screen !is Screen.MainScreen) BackHandler(true, onBackPressed)
+    BackHandler(screen !is Screen.MainScreen, onBackPressed)
 
     val connectionState by connectionFlow.collectAsState()
-    if (connectionState == MusicService.ConnectionState.DISCONNECTED) {
-        Text("MPD CONNECTION FAILED")
-    } else {
-        val playingState by playerState.state.collectAsState()
-        val playerVisible = playerState.current.collectAsState().value != -1
+    val playingState by playerState.state.collectAsState()
+    val playerVisible = playerState.current.collectAsState().value != -1
 
-        val scope = rememberCoroutineScope()
-        val pagerState = rememberPagerState()
-        val swipeState = rememberSwipeableState(false)
+    val scope = rememberCoroutineScope()
+    val pagerState = rememberPagerState()
+    val swipeState = rememberSwipeableState(false)
 
-        BoxWithConstraints(Modifier.fillMaxSize()) {
-            val transition = updateTransition(playerVisible, label = "")
-            val playerHeight = transition.animateDp({ tween() }, label = "") {
-                if (it) 72.dp
-                else 0.dp
-            }
+    BoxWithConstraints(Modifier.fillMaxSize()) {
+        val transition = updateTransition(playerVisible, label = "")
+        val playerHeight = transition.animateDp({ tween() }, label = "") {
+            if (it)
+                72.dp
+            else
+                0.dp
+        }
 
-            val swipeOffsetDp = with(LocalDensity.current) { swipeState.offset.value.toDp() }
+        val swipeOffsetDp = with(LocalDensity.current) { swipeState.offset.value.toDp() }
 
-            Box(Modifier.fillMaxSize().padding(bottom = playerHeight.value)) {
-                when (screen) {
-                    is Screen.MainScreen -> Column {
-                        TopAppBar(title = {
-                            Text(stringResource(R.string.app_name))
-                        }, actions = {
-                            var expanded by remember { mutableStateOf(false) }
+        Box(Modifier.fillMaxSize().padding(bottom = playerHeight.value)) {
+            when (screen) {
+                is Screen.MainScreen -> Scaffold(Modifier.fillMaxSize(), topBar = {
+                    TopAppBar(title = {
+                        Text(stringResource(R.string.app_name))
+                    }, actions = {
+                        var expanded by remember { mutableStateOf(false) }
 
-                            Box(Modifier.padding(end = 16.dp)) {
-                                IconButton({
-                                    expanded = true
-                                }) {
-                                    Icon(Icons.Default.MoreVert, "More")
-                                }
-
-                                DropdownMenu(expanded, onDismissRequest = { expanded = false }) {
-                                    DropdownMenuItem({
-                                        expanded = false
-                                        onSettings()
-                                    }) {
-                                        Text("Settings")
-                                    }
-                                }
-                            }
-                        })
-
-                        val categories = screen.categories.collectAsState().value
-                        if (categories != null) {
-                            TabRow(selectedTabIndex = pagerState.currentPage, indicator = {
-                                TabRowDefaults.Indicator(Modifier.pagerTabIndicatorOffset(pagerState, it))
+                        Box(Modifier.padding(end = 16.dp)) {
+                            IconButton({
+                                expanded = true
                             }) {
-                                categories.toList().forEachIndexed { i, pair ->
-                                    Tab(selected = i == pagerState.currentPage, onClick = {
-                                        scope.launch {
-                                            pagerState.animateScrollToPage(i)
-                                        }
-                                    }, text = { Text(pair.second.first) })
-                                }
+                                Icon(Icons.Default.MoreVert, "More")
                             }
 
-                            HorizontalPager(count = categories.size, state = pagerState) { page ->
-                                val list = categories.toList()[page].second.second.collectAsState().value
-                                if (list != null) {
-                                    LazyColumn(Modifier.fillMaxSize()) {
-                                        items(list.size) {
-                                            list[it]()
-                                        }
-                                    }
-                                } else {
-                                    Text("null")
+                            DropdownMenu(expanded, onDismissRequest = { expanded = false }) {
+                                DropdownMenuItem({
+                                    expanded = false
+                                    onSettings()
+                                }) {
+                                    Text("Settings")
                                 }
                             }
-                        } else {
-                            Text("Loading")
+                        }
+                    })
+                }) {
+                    Box(Modifier.fillMaxSize(), Alignment.Center) {
+                        when (connectionState) {
+                            MusicService.ConnectionState.CONNECTED -> {
+                                val categories = screen.categories.collectAsState().value
+                                if (categories != null) {
+                                    Column(Modifier.fillMaxSize()) {
+                                        TabRow(selectedTabIndex = pagerState.currentPage, indicator = {
+                                            TabRowDefaults.Indicator(Modifier.pagerTabIndicatorOffset(pagerState, it))
+                                        }) {
+                                            categories.toList().forEachIndexed { i, pair ->
+                                                Tab(selected = i == pagerState.currentPage, onClick = {
+                                                    scope.launch {
+                                                        pagerState.animateScrollToPage(i)
+                                                    }
+                                                }, text = { Text(pair.second.first) })
+                                            }
+                                        }
+
+                                        HorizontalPager(count = categories.size, state = pagerState) { page ->
+                                            val list = categories.toList()[page].second.second.collectAsState().value
+                                            if (list != null) {
+                                                LazyColumn(Modifier.fillMaxSize()) {
+                                                    items(list.size) {
+                                                        list[it]()
+                                                    }
+                                                }
+                                            } else {
+                                                Box(Modifier.fillMaxSize(), Alignment.Center) {
+                                                    CircularProgressIndicator()
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                            MusicService.ConnectionState.CONNECTING -> {
+                                CircularProgressIndicator()
+                            }
+                            MusicService.ConnectionState.DISCONNECTED -> {
+                                Button(screen.retryConnection) {
+                                    Text("Retry")
+                                }
+                            }
                         }
                     }
+                }
 
-                    is Screen.ArtistScreen -> Column {
-                        TopAppBar(title = {
-                            Text(screen.artistName)
-                        }, navigationIcon = {
-                            IconButton(onBackPressed) {
+                is Screen.ArtistScreen -> Column {
+                    TopAppBar(title = {
+                        Text(screen.artistName)
+                    }, navigationIcon = {
+                        IconButton(onBackPressed) {
+                            Icon(Icons.Default.ArrowBack, "")
+                        }
+
+                    }, actions = {
+                        var expanded by remember { mutableStateOf(false) }
+
+                        Box(Modifier.padding(end = 16.dp)) {
+                            IconButton({
+                                expanded = true
+                            }) {
+                                Icon(Icons.Default.MoreVert, "More")
+                            }
+
+                            DropdownMenu(expanded, onDismissRequest = { expanded = false }) {
+                                DropdownMenuItem({
+                                    expanded = false
+                                    onSettings()
+                                }) {
+                                    Text("Settings")
+                                }
+                            }
+                        }
+                    })
+                    val songs = screen.songs.collectAsState().value
+                    if (songs != null) {
+                        LazyColumn(Modifier.fillMaxSize()) {
+                            items(songs.size) {
+                                ConstraintLayout(Modifier.fillMaxWidth().height(72.dp).clickable {
+                                    setPlaylist(songs.map { it.first }, it)
+                                }) {
+                                    val (titleConstraint) = createRefs()
+
+                                    SingleLineText(songs[it].second.title, Modifier.constrainAs(titleConstraint) {
+                                        top.linkTo(parent.top)
+                                        bottom.linkTo(parent.bottom)
+                                        start.linkTo(parent.start, 16.dp)
+                                        end.linkTo(parent.end, 16.dp)
+
+                                        width = Dimension.fillToConstraints
+                                    })
+                                }
+                            }
+                        }
+                    } else {
+                        Box(Modifier.fillMaxSize(), Alignment.Center) {
+                            CircularProgressIndicator()
+                        }
+                    }
+                }
+
+                is Screen.AlbumScreen -> {
+                    val expandedHeight = 372.dp
+                    val redactedHeight = 56.dp
+
+                    val heightDifference = expandedHeight - redactedHeight
+
+                    val minOffset = with(LocalDensity.current) {
+                        -heightDifference.toPx()
+                    }
+
+                    val scrollState = rememberScrollState()
+
+                    val imageHeight = with(LocalDensity.current) { expandedHeight.toPx().roundToInt() }
+
+                    BoxWithConstraints(Modifier.fillMaxSize()) {
+                        val imageWidth = with(LocalDensity.current) { maxWidth.toPx().roundToInt() }
+                        val offset = max(minOffset, -scrollState.value.toFloat())
+                        val offsetProgress = min(0f, offset * 3f - minOffset * 2f) / (minOffset)
+                        TopAppBar(Modifier.fillMaxWidth().offset { IntOffset(0, offset.roundToInt()) }.height(expandedHeight),
+                            elevation = if (offset <= minOffset) 4.dp else 0.dp) {
+                            Box(Modifier.fillMaxSize()) {
+                                GlideImage(screen.art, Modifier.fillMaxSize().alpha(1f - offsetProgress), requestOptions = {
+                                    RequestOptions().override(imageWidth, imageHeight).diskCacheStrategy(DiskCacheStrategy.RESOURCE)
+                                }, contentScale = ContentScale.Crop)
+
+                                SingleLineText(screen.albumTitle,
+                                    Modifier.align(Alignment.BottomStart)
+                                        .paddingFromBaseline(bottom = 20.dp)
+                                        .padding(start = (16 + 56 * offsetProgress).dp)
+                                        .alpha(offsetProgress),
+                                    style = MaterialTheme.typography.h6)
+
+                            }
+                        }
+
+                        ConstraintLayout(Modifier.fillMaxWidth().height(56.dp)) {
+                            val (backConstraint, moreConstraint) = createRefs()
+
+                            IconButton(onBackPressed, Modifier.constrainAs(backConstraint) {
+                                start.linkTo(parent.start, 16.dp)
+                                top.linkTo(parent.top)
+                                bottom.linkTo(parent.bottom)
+
+                                //width = Dimension.value(24.dp)
+                                //height = 24.dp
+                            }) {
                                 Icon(Icons.Default.ArrowBack, "")
                             }
 
-                        }, actions = {
-                            var expanded by remember { mutableStateOf(false) }
+                            Box(Modifier.constrainAs(moreConstraint) {
+                                end.linkTo(parent.end, 16.dp)
+                                top.linkTo(parent.top)
+                                bottom.linkTo(parent.bottom)
 
-                            Box(Modifier.padding(end = 16.dp)) {
+                                //width = Dimension.value(24.dp)
+                                //height = 24.dp
+                            }) {
+                                var expanded by remember { mutableStateOf(false) }
+
                                 IconButton({
                                     expanded = true
                                 }) {
-                                    Icon(Icons.Default.MoreVert, "More")
+                                    Icon(Icons.Default.MoreVert, "")
                                 }
 
                                 DropdownMenu(expanded, onDismissRequest = { expanded = false }) {
                                     DropdownMenuItem({
+                                        screen.onPlayAlbumNext()
                                         expanded = false
-                                        onSettings()
                                     }) {
-                                        Text("Settings")
+                                        Text("Play next")
+                                    }
+                                    DropdownMenuItem({
+                                        screen.onAddAlbumToQueue()
+                                        expanded = false
+                                    }) {
+                                        Text("Add to queue")
                                     }
                                 }
                             }
-                        })
-                        val songs = screen.songs.collectAsState().value
-                        if (songs != null) {
-                            LazyColumn(Modifier.fillMaxSize()) {
-                                items(songs.size) {
-                                    ConstraintLayout(Modifier.fillMaxWidth().height(72.dp).clickable {
-                                        setPlaylist(songs.map { it.first }, it)
-                                    }) {
-                                        val (titleConstraint) = createRefs()
+                        }
 
-                                        SingleLineText(songs[it].second.title, Modifier.constrainAs(titleConstraint) {
-                                            top.linkTo(parent.top)
-                                            bottom.linkTo(parent.bottom)
-                                            start.linkTo(parent.start, 16.dp)
-                                            end.linkTo(parent.end, 16.dp)
+                        val tracks = screen.tracks.collectAsState().value
+                        if (tracks != null) {
+                            var showDisc = false
+                            for (track in tracks) {
+                                if (track.second.disc != 1) {
+                                    showDisc = true
+                                    break
+                                }
+                            }
 
-                                            width = Dimension.fillToConstraints
+                            CompositionLocalProvider(LocalOverScrollConfiguration provides null) {
+                                Column(Modifier.fillMaxSize().padding(top = redactedHeight).verticalScroll(scrollState)) {
+                                    Spacer(Modifier.height(heightDifference))
+                                    tracks.forEachIndexed { i, track ->
+                                        TrackView(track.second, showDisc, { screen.onPlayNext(i) }, { screen.onAddToQueue(i) }, { screen.onGoToArtist(i) }, Modifier.clickable {
+                                            setPlaylist(tracks.map { it.first }, i)
                                         })
                                     }
                                 }
                             }
                         } else {
-                            Text("null")
-                        }
-                    }
-
-                    is Screen.AlbumScreen -> {
-                        val expandedHeight = 372.dp
-                        val redactedHeight = 56.dp
-
-                        val heightDifference = expandedHeight - redactedHeight
-
-                        val minOffset = with(LocalDensity.current) {
-                            -heightDifference.toPx()
-                        }
-
-                        val scrollState = rememberScrollState()
-
-                        val imageHeight = with(LocalDensity.current) { expandedHeight.toPx().roundToInt() }
-
-                        BoxWithConstraints(Modifier.fillMaxSize()) {
-                            val imageWidth = with(LocalDensity.current) { maxWidth.toPx().roundToInt() }
-                            val offset = max(minOffset, -scrollState.value.toFloat())
-                            val offsetProgress = min(0f, offset * 3f - minOffset * 2f) / (minOffset)
-                            TopAppBar(Modifier.fillMaxWidth().offset { IntOffset(0, offset.roundToInt()) }.height(expandedHeight),
-                                elevation = if (offset <= minOffset) 4.dp else 0.dp) {
-                                Box(Modifier.fillMaxSize()) {
-                                    GlideImage(screen.art, Modifier.fillMaxSize().alpha(1f - offsetProgress), requestOptions = {
-                                        RequestOptions().override(imageWidth, imageHeight).diskCacheStrategy(DiskCacheStrategy.RESOURCE)
-                                    }, contentScale = ContentScale.Crop)
-
-                                    SingleLineText(screen.albumTitle,
-                                        Modifier.align(Alignment.BottomStart)
-                                            .paddingFromBaseline(bottom = 20.dp)
-                                            .padding(start = (16 + 56 * offsetProgress).dp)
-                                            .alpha(offsetProgress),
-                                        style = MaterialTheme.typography.h6)
-
-                                }
-                            }
-
-                            ConstraintLayout(Modifier.fillMaxWidth().height(56.dp)) {
-                                val (backConstraint, moreConstraint) = createRefs()
-
-                                IconButton(onBackPressed, Modifier.constrainAs(backConstraint) {
-                                    start.linkTo(parent.start, 16.dp)
-                                    top.linkTo(parent.top)
-                                    bottom.linkTo(parent.bottom)
-
-                                    //width = Dimension.value(24.dp)
-                                    //height = 24.dp
-                                }) {
-                                    Icon(Icons.Default.ArrowBack, "")
-                                }
-
-                                Box(Modifier.constrainAs(moreConstraint) {
-                                    end.linkTo(parent.end, 16.dp)
-                                    top.linkTo(parent.top)
-                                    bottom.linkTo(parent.bottom)
-
-                                    //width = Dimension.value(24.dp)
-                                    //height = 24.dp
-                                }) {
-                                    var expanded by remember { mutableStateOf(false) }
-
-                                    IconButton({
-                                        expanded = true
-                                    }) {
-                                        Icon(Icons.Default.MoreVert, "")
-                                    }
-
-                                    DropdownMenu(expanded, onDismissRequest = { expanded = false }) {
-                                        DropdownMenuItem({
-                                            screen.onPlayAlbumNext()
-                                            expanded = false
-                                        }) {
-                                            Text("Play next")
-                                        }
-                                        DropdownMenuItem({
-                                            screen.onAddAlbumToQueue()
-                                            expanded = false
-                                        }) {
-                                            Text("Add to queue")
-                                        }
-                                    }
-                                }
-                            }
-
-                            val tracks = screen.tracks.collectAsState().value
-                            if (tracks != null) {
-                                var showDisc = false
-                                for (track in tracks) {
-                                    if (track.second.disc != 1) {
-                                        showDisc = true
-                                        break
-                                    }
-                                }
-
-                                CompositionLocalProvider(LocalOverScrollConfiguration provides null) {
-                                    Column(Modifier.fillMaxSize().padding(top = redactedHeight).verticalScroll(scrollState)) {
-                                        Spacer(Modifier.height(heightDifference))
-                                        tracks.forEachIndexed { i, track ->
-                                            TrackView(track.second, showDisc, { screen.onPlayNext(i) }, { screen.onAddToQueue(i) }, { screen.onGoToArtist(i) }, Modifier.clickable {
-                                                setPlaylist(tracks.map { it.first }, i)
-                                            })
-                                        }
-                                    }
-                                }
-                            } else {
-                                Text("null")
+                            Box(Modifier.fillMaxSize(), Alignment.Center) {
+                                CircularProgressIndicator()
                             }
                         }
                     }
                 }
             }
+        }
 
-            val justOffScreen = with(LocalDensity.current) { 72.dp.roundToPx() }
+        val justOffScreen = with(LocalDensity.current) { 72.dp.roundToPx() }
 
-            var extended by remember { mutableStateOf(false) }
-            val extendTransition = updateTransition(extended, "")
-            val height = extendTransition.animateDp(label = "label1") {
-                if (it)
-                    maxHeight
-                else
-                    playerHeight.value - swipeOffsetDp
-            }
+        var extended by remember { mutableStateOf(false) }
+        val extendTransition = updateTransition(extended, "")
+        val height = extendTransition.animateDp(label = "label1") {
+            if (it)
+                maxHeight
+            else
+                playerHeight.value - swipeOffsetDp
+        }
 
-            transition.AnimatedVisibility({ it },
-                enter = slideInVertically(tween()) { justOffScreen },
-                exit = slideOutVertically(tween()) { justOffScreen },
-                modifier = Modifier.align(Alignment.BottomCenter)) {
-                val playlist by playerState.playlist.collectAsState()
-                val current by playerState.current.collectAsState()
-                val progress by playerState.progress.collectAsState()
-                PlayerSheet(playingState,
-                    playlist,
-                    current,
-                    setCurrentItemIndex,
-                    { _, _ -> },
-                    progress,
-                    swipeState,
-                    onPrev,
-                    onPlayPause,
-                    onNext,
-                    onSeek,
-                    extendTransition, {
-                        extended = it
-                    }, Modifier.height(height.value))
-            }
+        transition.AnimatedVisibility({ it },
+            enter = slideInVertically(tween()) { justOffScreen },
+            exit = slideOutVertically(tween()) { justOffScreen },
+            modifier = Modifier.align(Alignment.BottomCenter)) {
+            val playlist by playerState.playlist.collectAsState()
+            val current by playerState.current.collectAsState()
+            val progress by playerState.progress.collectAsState()
+            PlayerSheet(playingState,
+                playlist,
+                current,
+                setCurrentItemIndex,
+                { _, _ -> },
+                progress,
+                swipeState,
+                onPrev,
+                onPlayPause,
+                onNext,
+                onSeek,
+                extendTransition, {
+                    extended = it
+                }, Modifier.height(height.value))
         }
     }
 }
@@ -842,7 +871,12 @@ fun TrackView(track: Track, showDisc: Boolean, onPlayNext: () -> Unit, onAddToQu
 }
 
 sealed interface Screen {
-    class MainScreen(val categories: StateFlow<Map<String, Pair<String, StateFlow<List<@Composable () -> Unit>?>>>?>) : Screen
+    // categories is a map that represents the main view window
+    // The key is the mediaId of a root mediaItem e.g. "/artists"
+    // The value is a pair where first is the name of the category e.g. "Artists"
+    // and second is a list of composeables used to render the list e.g.
+    // listOf(ArtistView("Beethoven"), ArtistView("The Beatles"))
+    class MainScreen(val categories: StateFlow<Map<String, Pair<String, StateFlow<List<@Composable () -> Unit>?>>>?>, val retryConnection: () -> Unit) : Screen
 
     class ArtistScreen(val id: String,
                        val artistName: String,
