@@ -64,6 +64,7 @@ class MusicService : MediaLibraryService() {
                 .build()),
             executor,
             Callback()).build()
+
     }
 
     override fun onDestroy() {
@@ -130,13 +131,13 @@ class MusicService : MediaLibraryService() {
                 }
 
                 COMMAND_CONNECT -> {
-                    if (host == null || mediaLibrary == null) {
+                    if (host == null || mediaLibrary == null)
                         return SessionResult(SessionResult.RESULT_ERROR_INVALID_STATE, null)
-                    }
 
-                    if (connectionState != ConnectionState.DISCONNECTED) {
+                    if (connectionState != ConnectionState.DISCONNECTED)
                         timeoutInhibitor.send(null)
-                    }
+
+                    changeConnectionState(session, ConnectionState.CONNECTING)
 
                     try {
                         timeoutInhibitor = MpdTimeoutInhibitor(InetSocketAddress(host, port ?: -1), {
@@ -145,6 +146,7 @@ class MusicService : MediaLibraryService() {
                             changeConnectionState(session, ConnectionState.DISCONNECTED)
                         }
                     } catch (e: Exception) {
+                        changeConnectionState(session, ConnectionState.DISCONNECTED)
                         return SessionResult(SessionResult.RESULT_ERROR_IO, null)
                     }
                 }
@@ -163,9 +165,9 @@ class MusicService : MediaLibraryService() {
 
         private fun changeConnectionState(session: MediaSession, state: ConnectionState) {
             synchronized(connectionState) {
-                val broadcast = connectionState != state
+                val shouldBroadcast = connectionState != state
                 connectionState = state
-                if (broadcast)
+                if (shouldBroadcast)
                     session.broadcastCustomCommand(COMMAND_MPD_CONNECTION_STATUS_CHANGED, Bundle().apply { putParcelable(COMMAND_ARG_MPD_CONNECTION_STATUS, connectionState) })
             }
         }
@@ -617,44 +619,48 @@ class MpdTimeoutInhibitor(remote: SocketAddress, onConnected: () -> Unit, onShut
     init {
         thread = Thread {
             // Connect
-            socket.apply {
-                try {
-                    socket().connect(remote, 15 * 1000) // 15 seconds
-                } catch (e: Exception) {
-                    onShutdown()
-                    return@Thread
-                }
-
-                // Read the "OK MPD"
-                // TODO: Make this asynchronous so a cancellation can be submitted
-                val buffer = ByteBuffer.allocate(32)
-
-                while (true) {
-                    read(buffer) // TODO: Check if 0 is returned
-                    if (buffer.get(buffer.position() - 1) == '\n'.code.toByte()) break
-                }
-
-                writeAll(this, ByteBuffer.allocate(5).put("idle\n".toByteArray()).flip() as ByteBuffer)
-            }.configureBlocking(false)
-
-            onConnected()
+            socket.configureBlocking(false)
+            socket.connect(remote)
 
             val source = requestPipe.source().configureBlocking(false) as Pipe.SourceChannel
             val sink = resultPipe.sink()
             val selector = Selector.open()
 
-            val socketKey = socket.register(selector, SelectionKey.OP_READ)
+            val socketKey = socket.register(selector, SelectionKey.OP_CONNECT)
             var sourceKey = source.register(selector, SelectionKey.OP_READ)
 
             var handleSocket: () -> Boolean
             var handleSource: () -> Boolean
             var handleBoth: () -> Boolean
 
-            var onCommand: () -> Boolean = { false }
-            var readResponseAndThen: (ByteBuffer, Int, (ByteBuffer) -> () -> Boolean) -> Boolean = { _, _, _ -> false }
+            var readResponseAndThenRec: (ByteBuffer, Int, (ByteBuffer) -> () -> Boolean) -> Boolean = { _, _, _ -> false }
+            // Read a complete packet from the MPD server and then do 'next' with this packet
+            readResponseAndThenRec = { buffer, count, next ->
+                val newBuffer = ByteBuffer.allocate(count * 4096)
+                newBuffer.put(buffer)
+                if (socket.read(newBuffer) == -1) {
+                    false
+                } else {
+                    handleSocket = if (checkPacket(newBuffer)) {
+                        next(newBuffer)
+                    } else {
+                        newBuffer.flip();
+                        { readResponseAndThenRec(newBuffer, count + 1, next) }
+                    }
+
+                    true
+                }
+            }
+
+            val readResponseAndThen: ((ByteBuffer) -> () -> Boolean) -> Boolean = {
+                readResponseAndThenRec(ByteBuffer.allocate(0), 1, it)
+            }
+
             val cancel = {
                 false
             }
+
+            var onCommand: () -> Boolean = { false }
 
             // First arg - The buffer to write to the sink after sending the 'idle' command or null to not write anything to the sink
             var writeIdle: (ByteBuffer?) -> Boolean = { false }
@@ -668,14 +674,14 @@ class MpdTimeoutInhibitor(remote: SocketAddress, onConnected: () -> Unit, onShut
                         buffer.flip()
                         sink.write(ByteBuffer.allocate(4).putInt(buffer.limit()).flip() as ByteBuffer)
                         while (buffer.position() < buffer.limit()) sink.write(buffer)
-
-                        handleSource = onCommand
                     }
+
+                    handleSource = onCommand
 
                     //handleBoth = idleBoth
                     socketKey.interestOps(SelectionKey.OP_READ);
                     {
-                        readResponseAndThen(ByteBuffer.allocate(0), 1) {
+                        readResponseAndThen {
                             socketKey.interestOps(SelectionKey.OP_WRITE);
                             { writeIdle(buffer) }
                         }
@@ -687,24 +693,6 @@ class MpdTimeoutInhibitor(remote: SocketAddress, onConnected: () -> Unit, onShut
 
             writeIdle = { writeIdleRec(ByteBuffer.allocate(5).put("idle\n".toByteArray()).flip() as ByteBuffer, it) }
 
-            // Read a complete packet from the MPD server and then do 'next' with this packet
-            readResponseAndThen = { buffer, count, next ->
-                val newBuffer = ByteBuffer.allocate(count * 4096)
-                newBuffer.put(buffer)
-                if (socket.read(newBuffer) == -1) {
-                    false
-                } else {
-                    handleSocket = if (checkPacket(newBuffer)) {
-                        next(newBuffer)
-                    } else {
-                        newBuffer.flip();
-                        { readResponseAndThen(newBuffer, count + 1, next) }
-                    }
-
-                    true
-                }
-            }
-
             // Write a packet to the MPD server
             var writeRequest: (ByteBuffer) -> Boolean = { false }
             writeRequest = { buffer ->
@@ -714,7 +702,7 @@ class MpdTimeoutInhibitor(remote: SocketAddress, onConnected: () -> Unit, onShut
                 } else {
                     socketKey.interestOps(SelectionKey.OP_READ);
                     {
-                        readResponseAndThen(ByteBuffer.allocate(0), 1) {
+                        readResponseAndThen {
                             socketKey.interestOps(SelectionKey.OP_WRITE);
                             { writeIdle(it) }
                         }
@@ -733,7 +721,7 @@ class MpdTimeoutInhibitor(remote: SocketAddress, onConnected: () -> Unit, onShut
                 } else {
                     socketKey.interestOps(SelectionKey.OP_READ);
                     {
-                        readResponseAndThen(ByteBuffer.allocate(0), 1) {
+                        readResponseAndThen {
                             socketKey.interestOps(SelectionKey.OP_WRITE);
                             { writeRequest(buffer) }
                         }
@@ -747,6 +735,7 @@ class MpdTimeoutInhibitor(remote: SocketAddress, onConnected: () -> Unit, onShut
                 var buffer = ByteBuffer.allocate(4)
                 // To ease the implementation, switch source to blocking mode until we read the entire command
                 sourceKey.cancel()
+                // Finish the cancelation
                 selector.selectNow()
                 source.configureBlocking(true)
 
@@ -775,13 +764,27 @@ class MpdTimeoutInhibitor(remote: SocketAddress, onConnected: () -> Unit, onShut
             }
 
             handleSocket = {
-                readResponseAndThen(ByteBuffer.allocate(0), 1) {
-                    socketKey.interestOps(SelectionKey.OP_WRITE);
-                    { writeIdle(null) }
+                try {
+                    if (socket.finishConnect()) {
+                        socketKey.interestOps(SelectionKey.OP_READ)
+                        handleSocket = {
+                            readResponseAndThen {
+                                onConnected()
+                                socketKey.interestOps(SelectionKey.OP_WRITE);
+                                { writeIdle(null) }
+                            }
+                        }
+
+                        true
+                    } else {
+                        false
+                    }
+                } catch (e: Exception) {
+                    false
                 }
             }
 
-            handleSource = onCommand
+            handleSource = cancel
             //handleBoth = {
             //    readResponseAndThen(ByteBuffer.allocate(0), 1) {
             //        { writeIdle(null) }
