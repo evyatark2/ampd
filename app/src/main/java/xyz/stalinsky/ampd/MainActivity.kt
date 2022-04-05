@@ -163,13 +163,15 @@ class MainActivity : ComponentActivity() {
                             controller.play()
                         else if (playingState.value == SessionPlayer.PLAYER_STATE_PLAYING)
                             controller.pause()
-                    }, {
+                    }, { // onSkipToPrevious
                         controller.skipToPreviousPlaylistItem()
                     }, { // onSkipToNext
                         controller.skipToNextPlaylistItem()
-                    }, { // onSeek
+                    }, { // onSeekStart
                         updateSongProgressJob?.cancel()
                         updateSongProgressJob = null
+                    }, { // onSeek
+                        progressState.value = it // Immediately assign a temporary value before the service finalizes the decision in onSeekComlete()
                         controller.seekTo(it)
                     }) {
                         startActivity(Intent(this, SettingsActivity::class.java))
@@ -457,6 +459,7 @@ fun Main(connectionFlow: StateFlow<MusicService.ConnectionState>,
          onPlayPause: () -> Unit,
          onPrev: () -> Unit,
          onNext: () -> Unit,
+         onSeekStart: () -> Unit,
          onSeek: (Long) -> Unit,
          onSettings: () -> Unit) {
     val screen = screenFlow.collectAsState().value
@@ -749,6 +752,7 @@ fun Main(connectionFlow: StateFlow<MusicService.ConnectionState>,
                 onPrev,
                 onPlayPause,
                 onNext,
+                onSeekStart,
                 onSeek,
                 extendTransition, {
                     extended = it

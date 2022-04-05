@@ -57,6 +57,7 @@ fun PlayerSheet(state: Int,
                 onPrev: () -> Unit,
                 onPlayPause: () -> Unit,
                 onNext: () -> Unit,
+                onSeekStart: () -> Unit,
                 onSeek: (Long) -> Unit,
                 transition: Transition<Boolean>,
                 onExtend: (Boolean) -> Unit,
@@ -184,6 +185,7 @@ fun PlayerSheet(state: Int,
                             onPrev,
                             onPlayPause,
                             onNext,
+                            onSeekStart,
                             onSeek, {
                                 onExtend(true)
                             }, Modifier.fillMaxWidth().height(372.dp).alpha(-swipeState.offset.value / threeHundredDp - alpha.value))
@@ -241,6 +243,7 @@ fun ExpandedPlayer(title: String,
                    onPrev: () -> Unit,
                    onPlayPause: () -> Unit,
                    onNext: () -> Unit,
+                   onSeekStart: () -> Unit,
                    onSeek: (Long) -> Unit,
                    onExtend: () -> Unit,
                    modifier: Modifier) {
@@ -271,7 +274,7 @@ fun ExpandedPlayer(title: String,
             end.linkTo(parent.end, 16.dp)
         }, style = MaterialTheme.typography.subtitle1)
 
-        SeekBar(progress, 0, duration, onSeek, Modifier.constrainAs(seekBarConstraint) {
+        SeekBar(progress, 0, duration, onSeekStart, onSeek, Modifier.constrainAs(seekBarConstraint) {
             bottom.linkTo(playConstraint.top, 16.dp)
             start.linkTo(parent.start, 16.dp)
             end.linkTo(parent.end, 16.dp)
@@ -332,7 +335,7 @@ fun ExpandedPlayer(title: String,
  * @param onSeek Will be called when the user requests a seek
  */
 @Composable
-fun SeekBar(progress: Long, buffered: Long, max: Long, onSeek: (Long) -> Unit, modifier: Modifier = Modifier) {
+fun SeekBar(progress: Long, buffered: Long, max: Long, onSeekStart: () -> Unit, onSeek: (Long) -> Unit, modifier: Modifier = Modifier) {
     var isSeeking by remember { mutableStateOf(false) }
     var tapProgress by remember { mutableStateOf(0f) }
 
@@ -341,6 +344,7 @@ fun SeekBar(progress: Long, buffered: Long, max: Long, onSeek: (Long) -> Unit, m
 
         Slider(value = if (!isSeeking) progress.toFloat() / max else tapProgress, onValueChange = {
             if (!isSeeking) {
+                onSeekStart()
                 isSeeking = true
             }
 
