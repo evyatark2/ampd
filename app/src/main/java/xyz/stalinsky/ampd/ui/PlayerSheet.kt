@@ -25,6 +25,7 @@ import androidx.compose.ui.graphics.painter.BitmapPainter
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.vectorResource
 import androidx.compose.ui.unit.dp
 import androidx.constraintlayout.compose.ConstraintLayout
@@ -35,6 +36,7 @@ import androidx.palette.graphics.Palette
 import com.bumptech.glide.load.engine.DiskCacheStrategy
 import com.bumptech.glide.request.RequestOptions
 import com.skydoves.landscapist.glide.GlideImage
+import com.skydoves.landscapist.glide.GlideImageState
 import kotlinx.coroutines.launch
 import xyz.stalinsky.ampd.R
 import xyz.stalinsky.ampd.Song
@@ -63,7 +65,6 @@ fun PlayerSheet(state: Int,
                 onExtend: (Boolean) -> Unit,
                 modifier: Modifier) {
     val scope = rememberCoroutineScope()
-    val threeHundredDp = with(LocalDensity.current) { 300.dp.toPx() }
 
     if (swipeState.direction < 0f || (swipeState.currentValue && swipeState.direction == 0f)) {
         BackHandler {
@@ -154,6 +155,7 @@ fun PlayerSheet(state: Int,
             val imageHeight = with(LocalDensity.current) { 372.dp.toPx().roundToInt() }
 
             BoxWithConstraints {
+                val threeHundredDp = with(LocalDensity.current) { 300.dp.toPx() }
                 val imageWidth = with(LocalDensity.current) { maxWidth.toPx().roundToInt() }
                 GlideImage(currentItem.second.art, Modifier.fillMaxSize().swipeable(swipeState, mapOf(0f to false, -threeHundredDp to true), Orientation.Vertical).clickable {
                     scope.launch {
@@ -161,38 +163,62 @@ fun PlayerSheet(state: Int,
                     }
                 }, requestOptions = {
                     RequestOptions().override(imageWidth, imageHeight).diskCacheStrategy(DiskCacheStrategy.RESOURCE)
+                }, loading = {
+                    PlayerSheetInt(currentItem.second, null, swipeState, state, progress, onPrev, onPlayPause, onNext, onSeekStart, onSeek, onExtend, alpha.value)
                 }, success = { art ->
-                    val bitmap = art.drawable!!.toBitmap()
-                    val palette = Palette.from(bitmap).generate()
-
-                    val title = currentItem.second.title
-                    val artist = currentItem.second.title
-                    val duration = currentItem.second.duration
-
-                    // TODO: For some reason swipeState.direction doesn't get reset to 0f when there is no swiping/animation causing
-                    // TODO: ExpandedPlayer to react to user interaction when it should be hidden
-                    if (swipeState.direction != 0f || !swipeState.currentValue) {
-                        RedactedPlayer(title, artist, state, onPlayPause, Modifier.fillMaxWidth().height(372.dp).background(Color(palette.getDarkVibrantColor(0))).alpha(1 + swipeState.offset.value / threeHundredDp))
-                    }
-
-                    if (swipeState.direction != 0f || swipeState.currentValue) {
-                        ExpandedPlayer(title,
-                            artist,
-                            bitmap,
-                            state,
-                            progress,
-                            duration,
-                            onPrev,
-                            onPlayPause,
-                            onNext,
-                            onSeekStart,
-                            onSeek, {
-                                onExtend(true)
-                            }, Modifier.fillMaxWidth().height(372.dp).alpha(-swipeState.offset.value / threeHundredDp - alpha.value))
-                    }
+                    PlayerSheetInt(currentItem.second, art, swipeState, state, progress, onPrev, onPlayPause, onNext, onSeekStart, onSeek, onExtend, alpha.value)
                 })
             }
         }
+    }
+}
+
+@OptIn(ExperimentalMaterialApi::class)
+@Composable
+fun PlayerSheetInt(currentItem: Song,
+                   art: GlideImageState.Success?,
+                   swipeState: SwipeableState<Boolean>,
+                   playerState: Int,
+                   progress: Long,
+                   onPrev: () -> Unit,
+                   onPlayPause: () -> Unit,
+                   onNext: () -> Unit,
+                   onSeekStart: () -> Unit,
+                   onSeek: (Long) -> Unit,
+                   onExtend: (Boolean) -> Unit,
+                   alpha: Float) {
+    val threeHundredDp = with(LocalDensity.current) { 300.dp.toPx() }
+
+    val bitmap = art?.drawable?.toBitmap()
+
+    val title = currentItem.title
+    val artist = currentItem.artist
+    val duration = currentItem.duration
+
+    // TODO: For some reason swipeState.direction doesn't get reset to 0f when there is no swiping/animation causing
+    // TODO: ExpandedPlayer to react to user interaction when it should be hidden
+    if (swipeState.direction != 0f || !swipeState.currentValue) {
+        var modifier = Modifier.fillMaxWidth().height(372.dp).alpha(1 + swipeState.offset.value / threeHundredDp)
+        if (bitmap != null)
+            modifier = modifier.background(Color(Palette.from(bitmap).generate().getDarkVibrantColor(0)))
+
+        RedactedPlayer(title, artist, playerState, onPlayPause, modifier)
+    }
+
+    if (swipeState.direction != 0f || swipeState.currentValue) {
+        ExpandedPlayer(title,
+            artist,
+            bitmap,
+            playerState,
+            progress,
+            duration,
+            onPrev,
+            onPlayPause,
+            onNext,
+            onSeekStart,
+            onSeek, {
+                onExtend(true)
+            }, Modifier.fillMaxWidth().height(372.dp).alpha(-swipeState.offset.value / threeHundredDp - alpha))
     }
 }
 
@@ -236,7 +262,7 @@ fun RedactedPlayer(title: String, artist: String, playerState: Int, onPlayPause:
 @Composable
 fun ExpandedPlayer(title: String,
                    artist: String,
-                   art: Bitmap,
+                   art: Bitmap?,
                    playerState: Int,
                    progress: Long,
                    duration: Long,
@@ -259,7 +285,10 @@ fun ExpandedPlayer(title: String,
                 width = Dimension.fillToConstraints
                 height = Dimension.fillToConstraints
             }) {
-            Image(BitmapPainter(art.asImageBitmap()), "", Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
+            if (art != null) {
+                Image(BitmapPainter(art.asImageBitmap()), "", Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
+            } else
+                Image(painterResource(R.drawable.ic_launcher_background), "", Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
         }
 
         SingleLineText(title, Modifier.constrainAs(titleConstraint) {
