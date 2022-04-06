@@ -167,6 +167,8 @@ fun PlayerSheet(state: Int,
                     PlayerSheetInt(currentItem.second, null, swipeState, state, progress, onPrev, onPlayPause, onNext, onSeekStart, onSeek, onExtend, alpha.value)
                 }, success = { art ->
                     PlayerSheetInt(currentItem.second, art, swipeState, state, progress, onPrev, onPlayPause, onNext, onSeekStart, onSeek, onExtend, alpha.value)
+                }, failure = {
+                    PlayerSheetInt(currentItem.second, null, swipeState, state, progress, onPrev, onPlayPause, onNext, onSeekStart, onSeek, onExtend, alpha.value)
                 })
             }
         }
