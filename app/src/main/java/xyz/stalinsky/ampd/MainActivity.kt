@@ -4,6 +4,7 @@ import android.content.ComponentName
 import android.content.Intent
 import android.content.SharedPreferences
 import android.os.Bundle
+import android.os.Parcelable
 import android.util.Log
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
@@ -49,6 +50,8 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
+import kotlinx.parcelize.Parcelize
+import kotlinx.parcelize.RawValue
 import xyz.stalinsky.ampd.ui.SingleLineText
 import xyz.stalinsky.ampd.ui.PlayerSheet
 import xyz.stalinsky.ampd.ui.theme.AMPDTheme
@@ -237,7 +240,9 @@ class MainActivity : ComponentActivity() {
                     when (args!!.getParcelable<MusicService.ConnectionState>(MusicService.COMMAND_ARG_MPD_CONNECTION_STATUS)) {
                         MusicService.ConnectionState.CONNECTED -> {
                             connectionState.value = MusicService.ConnectionState.CONNECTED
-                            val params = MediaLibraryService.LibraryParams.Builder().build()
+                            val params = MediaLibraryService.LibraryParams.Builder()
+                                .setExtras(Bundle().apply { putParcelable("", screenState.value as Screen.MainScreen) })
+                                .build()
                             (controller as MediaBrowser).subscribe(controller.getLibraryRoot(params).get().mediaItem?.metadata?.mediaId!!, params)
                         }
 
@@ -316,93 +321,106 @@ class MainActivity : ComponentActivity() {
         }
 
         override fun onChildrenChanged(browser: MediaBrowser, parentId: String, itemCount: Int, params: MediaLibraryService.LibraryParams?) {
-            when {
-                parentId == "/" -> {
-                    val children = browser.getChildren("/", 0, 3, params).get().mediaItems
-                    categories.value = children?.associateBy({
-                        it.metadata?.getString(MediaMetadata.METADATA_KEY_MEDIA_ID)!!
-                    }, {
-                        Pair(it.metadata?.getString(MediaMetadata.METADATA_KEY_TITLE)!!, MutableStateFlow(null))
-                    })
-                    for (child in children!!) {
-                        val id = child.metadata?.getString(MediaMetadata.METADATA_KEY_MEDIA_ID)!!
-                        browser.subscribe(id, params)
-                    }
-                }
-
-                parentId == "/artists" -> {
-                    val children = browser.getChildren("/artists", 0, Int.MAX_VALUE, params).get().mediaItems?.map {
-                        // Couldn't find how to return a @Composable expression directly
-                        val composable: @Composable () -> Unit = {
-                            ArtistView(it.metadata?.getString(MediaMetadata.METADATA_KEY_TITLE) ?: "") {
-                                backstack.push(screenState.value)
-                                screenState.value = Screen.ArtistScreen(it.metadata?.getString(MediaMetadata.METADATA_KEY_MEDIA_ID)!!,
-                                    it.metadata?.getString(MediaMetadata.METADATA_KEY_TITLE)!!,
-                                    MutableStateFlow(null),
-                                    MutableStateFlow(null))
-                                browser.subscribe(it.metadata?.getString(MediaMetadata.METADATA_KEY_MEDIA_ID)!!, params)
+            when (val screen = params!!.extras!![""]) {
+                is Screen.MainScreen -> {
+                    when (parentId) {
+                        "/" -> {
+                            val children = browser.getChildren("/", 0, 3, params).get().mediaItems
+                            categories.value = children?.associateBy({
+                                it.metadata?.getString(MediaMetadata.METADATA_KEY_MEDIA_ID)!!
+                            }, {
+                                Pair(it.metadata?.getString(MediaMetadata.METADATA_KEY_TITLE)!!, MutableStateFlow(null))
+                            })
+                            for (child in children!!) {
+                                val id = child.metadata?.getString(MediaMetadata.METADATA_KEY_MEDIA_ID)!!
+                                browser.subscribe(id, params)
                             }
                         }
 
-                        composable
-                    }
+                        "/artists" -> {
+                            val children = browser.getChildren("/artists", 0, Int.MAX_VALUE, params).get().mediaItems?.map {
+                                // Couldn't find how to return a @Composable expression directly
+                                val composable: @Composable () -> Unit = {
+                                    ArtistView(it.metadata?.getString(MediaMetadata.METADATA_KEY_TITLE) ?: "") {
+                                        backstack.push(screenState.value)
+                                        val newScreen = Screen.ArtistScreen(it.metadata?.getString(MediaMetadata.METADATA_KEY_MEDIA_ID)!!,
+                                            it.metadata?.getString(MediaMetadata.METADATA_KEY_TITLE)!!,
+                                            MutableStateFlow(null),
+                                            MutableStateFlow(null))
+                                        screenState.value = newScreen
+                                        val newParams = MediaLibraryService.LibraryParams.Builder()
+                                            .setExtras(Bundle().apply { putParcelable("", newScreen) })
+                                            .build()
+                                        browser.subscribe(it.metadata?.getString(MediaMetadata.METADATA_KEY_MEDIA_ID)!!, newParams)
+                                    }
+                                }
 
-                    categories.value?.get("/artists")?.second?.value = children
-                }
-
-                parentId == "/albums" -> {
-                    val children = browser.getChildren("/albums", 0, Int.MAX_VALUE, params).get().mediaItems?.map {
-                        // Couldn't find how to return a @Composable expression directly
-                        val composable: @Composable () -> Unit = {
-                            AlbumView(Album(it.metadata?.getString(MediaMetadata.METADATA_KEY_TITLE) ?: "",
-                                it.metadata?.extras?.getString(MusicService.METADATA_EXTRA_ARTIST_ID)!!,
-                                it.metadata?.getString(MediaMetadata.METADATA_KEY_ARTIST) ?: "",
-                                it.metadata?.getString(MediaMetadata.METADATA_KEY_ALBUM_ART_URI))) {
-                                backstack.push(screenState.value)
-                                screenState.value = Screen.AlbumScreen(it.metadata?.getString(MediaMetadata.METADATA_KEY_MEDIA_ID)!!,
-                                    it.metadata?.getString(MediaMetadata.METADATA_KEY_TITLE)!!,
-                                    it.metadata?.getString(MediaMetadata.METADATA_KEY_ALBUM_ART_URI),
-                                    MutableStateFlow(null), { // onPlayAlbumNext
-                                        val current = browser.currentMediaItemIndex
-                                        // TODO: Lock the executor from running other playlist-mutating runnables while this future is running
-                                        var future = browser.addPlaylistItem(current + 1, (screenState.value as Screen.AlbumScreen).tracks.value!!.last().first)
-                                        (screenState.value as Screen.AlbumScreen).tracks.value?.asReversed()?.drop(1)?.forEach { track ->
-                                            future = Futures.transformAsync(future, {
-                                                browser.addPlaylistItem(current + 1, track.first)
-                                            }, executor)
-                                        }
-                                        future.addListener({
-                                            if (current == -1)
-                                                browser.play().get()
-                                        }, executor)
-                                    }, { // onAddAlbumToQueue
-                                        var future = browser.addPlaylistItem(browser.playlist?.size ?: 0, (screenState.value as Screen.AlbumScreen).tracks.value!!.first().first)
-                                        (screenState.value as Screen.AlbumScreen).tracks.value?.drop(1)?.forEach { track ->
-                                            future = Futures.transformAsync(future, {
-                                                browser.addPlaylistItem(browser.playlist?.size ?: 0, track.first)
-                                            }, executor)
-                                        }
-                                    }, { // onPlayNext
-                                        val current = browser.currentMediaItemIndex
-                                        browser.addPlaylistItem(current + 1, (screenState.value as Screen.AlbumScreen).tracks.value!![it].first).addListener({
-                                            if (current == -1)
-                                                browser.play().get()
-                                        }, executor)
-                                    }, { // onAddToQueue
-                                        browser.addPlaylistItem(browser.playlist?.size ?: 0, (screenState.value as Screen.AlbumScreen).tracks.value!![it].first).get()
-                                    }, { // onGoToArtist
-                                    })
-                                browser.subscribe(it.metadata?.getString(MediaMetadata.METADATA_KEY_MEDIA_ID)!!, params)
+                                composable
                             }
+
+                            categories.value?.get("/artists")?.second?.value = children
                         }
 
-                        composable
-                    }
+                        "/albums" -> {
+                            val children = browser.getChildren("/albums", 0, Int.MAX_VALUE, params).get().mediaItems?.map {
+                                // Couldn't find how to return a @Composable expression directly
+                                val composable: @Composable () -> Unit = {
+                                    AlbumView(Album(it.metadata?.getString(MediaMetadata.METADATA_KEY_TITLE) ?: "",
+                                        it.metadata?.extras?.getString(MusicService.METADATA_EXTRA_ARTIST_ID)!!,
+                                        it.metadata?.getString(MediaMetadata.METADATA_KEY_ARTIST) ?: "",
+                                        it.metadata?.getString(MediaMetadata.METADATA_KEY_ALBUM_ART_URI))) {
+                                        backstack.push(screenState.value)
+                                        val newScreen = Screen.AlbumScreen(it.metadata?.getString(MediaMetadata.METADATA_KEY_MEDIA_ID)!!,
+                                            it.metadata?.getString(MediaMetadata.METADATA_KEY_TITLE)!!,
+                                            it.metadata?.getString(MediaMetadata.METADATA_KEY_ALBUM_ART_URI),
+                                            MutableStateFlow(null), { // onPlayAlbumNext
+                                                val current = browser.currentMediaItemIndex
+                                                // TODO: Lock the executor from running other playlist-mutating runnables while this future is running
+                                                var future = browser.addPlaylistItem(current + 1, (screenState.value as Screen.AlbumScreen).tracks.value!!.last().first)
+                                                (screenState.value as Screen.AlbumScreen).tracks.value?.asReversed()?.drop(1)?.forEach { track ->
+                                                    future = Futures.transformAsync(future, {
+                                                        browser.addPlaylistItem(current + 1, track.first)
+                                                    }, executor)
+                                                }
+                                                future.addListener({
+                                                    if (current == -1)
+                                                        browser.play().get()
+                                                }, executor)
+                                            }, { // onAddAlbumToQueue
+                                                var future = browser.addPlaylistItem(browser.playlist?.size ?: 0, (screenState.value as Screen.AlbumScreen).tracks.value!!.first().first)
+                                                (screenState.value as Screen.AlbumScreen).tracks.value?.drop(1)?.forEach { track ->
+                                                    future = Futures.transformAsync(future, {
+                                                        browser.addPlaylistItem(browser.playlist?.size ?: 0, track.first)
+                                                    }, executor)
+                                                }
+                                            }, { // onPlayNext
+                                                val current = browser.currentMediaItemIndex
+                                                browser.addPlaylistItem(current + 1, (screenState.value as Screen.AlbumScreen).tracks.value!![it].first).addListener({
+                                                    if (current == -1)
+                                                        browser.play().get()
+                                                }, executor)
+                                            }, { // onAddToQueue
+                                                browser.addPlaylistItem(browser.playlist?.size ?: 0, (screenState.value as Screen.AlbumScreen).tracks.value!![it].first).get()
+                                            }, { // onGoToArtist
+                                            })
+                                        screenState.value = newScreen
+                                        val newParams = MediaLibraryService.LibraryParams.Builder()
+                                            .setExtras(Bundle().apply { putParcelable("", newScreen) })
+                                            .build()
+                                        browser.subscribe(it.metadata?.getString(MediaMetadata.METADATA_KEY_MEDIA_ID)!!, newParams)
+                                    }
+                                }
 
-                    categories.value?.get("/albums")?.second?.value = children
+                                composable
+                            }
+
+                            categories.value?.get("/albums")?.second?.value = children
+                        }
+
+                    }
                 }
 
-                parentId.startsWith("/artists") -> {
+                is Screen.ArtistScreen -> {
                     val children = browser.getChildren(parentId, 0, Int.MAX_VALUE, params).get().mediaItems?.map {
                         Pair(it.metadata?.getString(MediaMetadata.METADATA_KEY_MEDIA_ID)!!,
                             Song(it.metadata?.getString(MediaMetadata.METADATA_KEY_TITLE)!!,
@@ -414,11 +432,10 @@ class MainActivity : ComponentActivity() {
                                 it.metadata?.getString(MediaMetadata.METADATA_KEY_ALBUM_ART_URI)))
                     }
 
-                    val screen = screenState.value
-                    if (screen is Screen.ArtistScreen) (screen.songs as MutableStateFlow).value = children
+                    (screen.songs as MutableStateFlow).value = children
                 }
 
-                parentId.startsWith("/albums") -> {
+                is Screen.AlbumScreen -> {
                     val children = browser.getChildren(parentId, 0, Int.MAX_VALUE, params).get().mediaItems?.map {
                         Pair(it.metadata?.getString(MediaMetadata.METADATA_KEY_MEDIA_ID)!!,
                             Track(it.metadata?.getString(MediaMetadata.METADATA_KEY_TITLE)!!,
@@ -428,9 +445,7 @@ class MainActivity : ComponentActivity() {
                                 it.metadata?.getLong(MediaMetadata.METADATA_KEY_TRACK_NUMBER)!!.toInt()))
                     }
 
-                    val screen = screenState.value
-                    if (screen is Screen.AlbumScreen)
-                            (screen.tracks as MutableStateFlow).value = children
+                    (screen.tracks as MutableStateFlow).value = children
                 }
             }
         }
@@ -880,14 +895,20 @@ sealed interface Screen {
     // The value is a pair where first is the name of the category e.g. "Artists"
     // and second is a list of composeables used to render the list e.g.
     // listOf(ArtistView("Beethoven"), ArtistView("The Beatles"))
-    class MainScreen(val categories: StateFlow<Map<String, Pair<String, StateFlow<List<@Composable () -> Unit>?>>>?>, val retryConnection: () -> Unit) : Screen
+    @Parcelize
+    class MainScreen(val categories: @RawValue StateFlow<Map<String, Pair<String, StateFlow<List<@Composable () -> Unit>?>>>?>, val retryConnection: () -> Unit) : Screen,
+                                                                                                                                                                   Parcelable
 
+    @Parcelize
     class ArtistScreen(val id: String,
                        val artistName: String,
-                       val albums: StateFlow<List<Pair<String, Album>>?>,
-                       val songs: StateFlow<List<Pair<String, Song>>?>) : Screen
+                       val albums: @RawValue StateFlow<List<Pair<String, Album>>?>,
+                       val songs: @RawValue StateFlow<List<Pair<String, Song>>?>) : Screen,
+                                                                          Parcelable
 
-    class AlbumScreen(val id: String, val albumTitle: String, val art: String?, val tracks: StateFlow<List<Pair<String, Track>>?>, val onPlayAlbumNext: () -> Unit, val onAddAlbumToQueue: () -> Unit, val onPlayNext: (Int) -> Unit, val onAddToQueue: (Int) -> Unit, val onGoToArtist: (Int) -> Unit) : Screen
+    @Parcelize
+    class AlbumScreen(val id: String, val albumTitle: String, val art: String?, val tracks: @RawValue StateFlow<List<Pair<String, Track>>?>, val onPlayAlbumNext: () -> Unit, val onAddAlbumToQueue: () -> Unit, val onPlayNext: (Int) -> Unit, val onAddToQueue: (Int) -> Unit, val onGoToArtist: (Int) -> Unit) : Screen,
+                                                                                                                                                                                                                                                                                                          Parcelable
 }
 
 data class PlayerState(val state: StateFlow<Int>,
