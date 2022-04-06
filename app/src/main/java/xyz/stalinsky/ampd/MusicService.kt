@@ -8,6 +8,7 @@ import android.annotation.SuppressLint
 import android.net.Uri
 import android.os.Bundle
 import android.os.Parcelable
+import android.util.Log
 import androidx.media2.common.MediaItem
 import androidx.media2.common.MediaMetadata
 import androidx.media2.common.UriMediaItem
@@ -94,13 +95,31 @@ class MusicService : MediaLibraryService() {
 
         private lateinit var timeoutInhibitor: MpdTimeoutInhibitor
 
-        private val clients: MutableMap<MediaSession.ControllerInfo, Stack<Pair<String, MutableMap<String, MediaItem>>>> = HashMap()
+        // Key - ID of some parent MediaItem
+        // Value - A map of controllers and their LibraryParams that were used when subscribing to a particular ID
+        private val subscribers: MutableMap<String, MutableMap<MediaSession.ControllerInfo, LibraryParams?>> = HashMap()
+
+        // Key - A connected controller
+        // Value - A list of IDs that the controller is subscribed to
+        private val subscriptions: MutableMap<MediaSession.ControllerInfo, MutableSet<String>> = HashMap()
 
         private var mediaLibrary: String? = null
 
-        override fun onConnect(session: MediaSession, controller: MediaSession.ControllerInfo): SessionCommandGroup {
-            clients[controller] = Stack()
+        // Key - An ID of a MediaItem
+        // Value - The MediaItem
+        private val mediaItems: MutableMap<String, MediaItem> = hashMapOf()
 
+        // Key - an ID of a parent MediaItem
+        // Value - A pair where the first value is a reference count of controllers that point to this key in the map 'cache'
+        // and the second value is a list of IDs that are the children
+        private val refCounts: MutableMap<String, Pair<Int, Set<String>>> = hashMapOf()
+
+        // Key - A connected controller
+        // Value - A list of parent IDs this controller has gotten using getChildren()
+        private val cache: MutableMap<MediaSession.ControllerInfo, MutableSet<String>> = hashMapOf()
+
+        override fun onConnect(session: MediaSession, controller: MediaSession.ControllerInfo): SessionCommandGroup {
+            cache[controller] = hashSetOf()
             return SessionCommandGroup.Builder()
                 .addAllPredefinedCommands(SessionCommand.COMMAND_VERSION_2)
                 .addCommand(COMMAND_SET_MPD_ADDRESS)
@@ -142,6 +161,13 @@ class MusicService : MediaLibraryService() {
                     try {
                         timeoutInhibitor = MpdTimeoutInhibitor(InetSocketAddress(host, port ?: -1), {
                             changeConnectionState(session, ConnectionState.CONNECTED)
+                        }, {
+                            Log.d("MusicService", "UPDATING")
+                            for (id in subscribers) {
+                                for (subscription in id.value) {
+                                    (session as MediaLibrarySession).notifyChildrenChanged(subscription.key, id.key, 0, subscription.value)
+                                }
+                            }
                         }) {
                             changeConnectionState(session, ConnectionState.DISCONNECTED)
                         }
@@ -150,17 +176,41 @@ class MusicService : MediaLibraryService() {
                         return SessionResult(SessionResult.RESULT_ERROR_IO, null)
                     }
                 }
+
+                COMMAND_PUT_CHILDREN -> {
+                    if (args == null || !args.containsKey(COMMAND_ARG_PARENT_ID))
+                        return SessionResult(SessionResult.RESULT_ERROR_BAD_VALUE, null)
+
+                    cache[controller]!!.remove(args.getString(COMMAND_ARG_PARENT_ID))
+                }
             }
 
             return SessionResult(SessionResult.RESULT_SUCCESS, null)
         }
 
         override fun onDisconnected(session: MediaSession, controller: MediaSession.ControllerInfo) {
-            clients.remove(controller)
-            if (clients.isEmpty()) {
-                timeoutInhibitor.send(null)
-                // TODO
+            for (id in subscriptions[controller]!!) {
+                subscribers[id]!!.remove(controller)
+                if (subscribers[id]!!.isEmpty())
+                    subscribers.remove(id)
             }
+
+            subscriptions.remove(controller)
+
+            for (id in cache[controller]!!) {
+                val pair = refCounts[id]!!
+                if (pair.first == 1) {
+                    for (item in pair.second) {
+                        mediaItems.remove(item)
+                    }
+
+                    refCounts.remove(id)
+                }
+
+                refCounts[id] = Pair(pair.first - 1, pair.second)
+            }
+
+            cache.remove(controller)
         }
 
         private fun changeConnectionState(session: MediaSession, state: ConnectionState) {
@@ -191,18 +241,20 @@ class MusicService : MediaLibraryService() {
             return SessionResult.RESULT_SUCCESS
         }
 
-        override fun onCreateMediaItem(session: MediaSession, controller: MediaSession.ControllerInfo, mediaId: String): MediaItem? {
-            val mediaItem = clients[controller]?.peek()?.second?.get(mediaId) ?: return null
-
-            return UriMediaItem.Builder(Uri.parse("$mediaLibrary/${mediaItem.metadata!!.getString(MediaMetadata.METADATA_KEY_MEDIA_ID)}"))
-                .setMetadata(mediaItem.metadata)
-                .build()
-        }
+        override fun onCreateMediaItem(session: MediaSession, controller: MediaSession.ControllerInfo, mediaId: String) =
+            mediaItems[mediaId]
 
         @SuppressLint("RestrictedApi")
         override fun onSubscribe(session: MediaLibrarySession, controller: MediaSession.ControllerInfo, parentId: String, params: LibraryParams?): Int {
-            if (parentId.startsWith("/artists/") || parentId.startsWith("/albums/"))
-                clients[controller]!!.push(Pair(parentId, mutableMapOf()))
+            if (!subscribers.containsKey(parentId))
+                subscribers[parentId] = hashMapOf(controller to params)
+            else
+                subscribers[parentId]!![controller] = params
+
+            if (!subscriptions.containsKey(controller))
+                subscriptions[controller] = hashSetOf()
+
+            subscriptions[controller]!!.add(parentId)
 
             session.notifyChildrenChanged(controller, parentId, rootNodes.size, params)
 
@@ -211,10 +263,14 @@ class MusicService : MediaLibraryService() {
 
         @SuppressLint("RestrictedApi")
         override fun onUnsubscribe(session: MediaLibrarySession, controller: MediaSession.ControllerInfo, parentId: String): Int {
-            if (!clients[controller]!!.empty() && clients[controller]!!.peek().first != parentId)
-                return LibraryResult.RESULT_ERROR_BAD_VALUE
+            if (!subscribers.containsKey(parentId))
+                return LibraryResult.RESULT_ERROR_INVALID_STATE
 
-            clients[controller]!!.pop()
+            subscribers[parentId]?.remove(controller)
+            if (subscribers[parentId]!!.isEmpty())
+                subscribers.remove(parentId)
+
+            subscriptions[controller]?.remove(parentId)
 
             return LibraryResult.RESULT_SUCCESS
         }
@@ -241,8 +297,6 @@ class MusicService : MediaLibraryService() {
                                    page: Int,
                                    pageSize: Int,
                                    params: LibraryParams?): LibraryResult {
-            if (!clients[controller]!!.empty() && clients[controller]!!.peek()?.first != parentId) return LibraryResult(LibraryResult.RESULT_ERROR_INVALID_STATE)
-
             when {
                 parentId == "/" -> {
                     return LibraryResult(LibraryResult.RESULT_SUCCESS, rootNodes, params)
@@ -477,7 +531,7 @@ class MusicService : MediaLibraryService() {
                             line = reader.readLine()
                         }
 
-                        val mediaItem = MediaItem.Builder()
+                        val mediaItem = UriMediaItem.Builder(Uri.parse("$mediaLibrary/$filename"))
                             .setMetadata(MediaMetadata.Builder()
                                 .putString(MediaMetadata.METADATA_KEY_MEDIA_ID, filename)
                                 .putLong(MediaMetadata.METADATA_KEY_BROWSABLE, MediaMetadata.BROWSABLE_TYPE_NONE)
@@ -502,7 +556,20 @@ class MusicService : MediaLibraryService() {
                         items.add(mediaItem)
                     }
 
-                    clients[controller]!!.peek().second.putAll(items.associateBy({ it.metadata!!.getString(MediaMetadata.METADATA_KEY_MEDIA_ID)!! }, { it }))
+                    if (refCounts[parentId] != null) {
+                        for (item in refCounts[parentId]!!.second)
+                            mediaItems.remove(item)
+                    }
+
+                    mediaItems.putAll(items.associateBy({ it.metadata!!.getString(MediaMetadata.METADATA_KEY_MEDIA_ID)!! }, { it }))
+                    val set = hashSetOf<String>()
+                    items.forEach {
+                        set.add(it.metadata!!.getString(MediaMetadata.METADATA_KEY_MEDIA_ID)!!)
+                    }
+
+                    refCounts[parentId] = Pair(refCounts[parentId]?.first ?: 1, set)
+
+                    cache[controller]?.add(parentId)
 
                     return LibraryResult(LibraryResult.RESULT_SUCCESS, items, params)
                 }
@@ -553,7 +620,7 @@ class MusicService : MediaLibraryService() {
                             line = reader.readLine()
                         }
 
-                        val mediaItem = MediaItem.Builder()
+                        val mediaItem = UriMediaItem.Builder(Uri.parse("$mediaLibrary/$filename"))
                             .setMetadata(MediaMetadata.Builder()
                                 .putString(MediaMetadata.METADATA_KEY_MEDIA_ID, filename)
                                 .putLong(MediaMetadata.METADATA_KEY_BROWSABLE, MediaMetadata.BROWSABLE_TYPE_NONE)
@@ -566,7 +633,7 @@ class MusicService : MediaLibraryService() {
                                 .putLong(MediaMetadata.METADATA_KEY_TRACK_NUMBER, track)
                                 .putString(MediaMetadata.METADATA_KEY_ALBUM_ART_URI, "${mediaLibrary}/${filename.substringBeforeLast('/')}/cover.jpg")
                                 .setExtras(Bundle().apply {
-                                    putString(METADATA_EXTRA_ARTIST_ID, if (artistId.isEmpty()) "/artists/$artistName" else artistId)
+                                    putString(METADATA_EXTRA_ARTIST_ID, artistId.ifEmpty { "/artists/$artistName" })
                                     putString(METADATA_EXTRA_ALBUM_ID, parentId)
                                 })
                                 .build())
@@ -575,7 +642,23 @@ class MusicService : MediaLibraryService() {
                         items.add(mediaItem)
                     }
 
-                    clients[controller]!!.peek().second.putAll(items.associateBy({ it.metadata!!.getString(MediaMetadata.METADATA_KEY_MEDIA_ID)!! }, { it }))
+                    if (refCounts[parentId] != null) {
+                        for (item in refCounts[parentId]!!.second)
+                            mediaItems.remove(item)
+                    }
+
+                    mediaItems.putAll(items.associateBy({ it.metadata!!.getString(MediaMetadata.METADATA_KEY_MEDIA_ID)!! }, { it }))
+                    val set = hashSetOf<String>()
+                    items.forEach {
+                        set.add(it.metadata!!.getString(MediaMetadata.METADATA_KEY_MEDIA_ID)!!)
+                    }
+
+                    if (!cache[controller]!!.contains(parentId))
+                        refCounts[parentId] = Pair(refCounts[parentId]?.first?.plus(1) ?: 1, set)
+                    else
+                        refCounts[parentId] = Pair(refCounts[parentId]!!.first, set)
+
+                    cache[controller]?.add(parentId)
 
                     return LibraryResult(LibraryResult.RESULT_SUCCESS, items, params)
                 }
@@ -598,18 +681,21 @@ class MusicService : MediaLibraryService() {
         val COMMAND_SET_MPD_ADDRESS = SessionCommand("xyz.stalinsky.ampd.MusicService.COMMAND_SET_MPD_ADDRESS", null)
         val COMMAND_SET_MEDIA_LIBRARY = SessionCommand("xyz.stalinsky.ampd.MusicService.COMMAND_SET_MEDIA_LIBRARY", null)
         val COMMAND_CONNECT = SessionCommand("xyz.stalinsky.ampd.MusicService.COMMAND_CONNECT", null)
+        val COMMAND_PUT_CHILDREN = SessionCommand("xyz.stalinsky.ampd.MusicService.COMMAND_PUT_CHILDREN", null)
 
         const val COMMAND_ARG_MPD_HOST = "xyz.stalinsky.ampd.MusicService.COMMAND_EXTRA_SET_MPD_ADDRESS.0"
         const val COMMAND_ARG_MPD_PORT = "xyz.stalinsky.ampd.MusicService.COMMAND_EXTRA_SET_MPD_ADDRESS.1"
 
         const val COMMAND_ARG_MEDIA_LIBRARY = "xyz.stalinsky.ampd.MusicService.COMMAND_EXTRA_SET_MEDIA_LIBRARY.0"
 
+        const val COMMAND_ARG_PARENT_ID = "xyz.stalinsky.ampd.MusicService.COMMAND_EXTRA_PUT_CHILDREN.0"
+
         const val METADATA_EXTRA_ARTIST_ID = "xyz.stalinsky.MusicService.METADATA_EXTRA_ARTIST_ID"
         const val METADATA_EXTRA_ALBUM_ID = "xyz.stalinsky.MusicService.METADATA_EXTRA_ARTIST_ID"
     }
 }
 
-class MpdTimeoutInhibitor(remote: SocketAddress, onConnected: () -> Unit, onShutdown: () -> Unit) : Closeable {
+class MpdTimeoutInhibitor(remote: SocketAddress, onConnected: () -> Unit, onUpdate: () -> Unit, onShutdown: () -> Unit) : Closeable {
     private val socket = SocketChannel.open()
 
     private val requestPipe = Pipe.open()
@@ -629,7 +715,7 @@ class MpdTimeoutInhibitor(remote: SocketAddress, onConnected: () -> Unit, onShut
             val socketKey = socket.register(selector, SelectionKey.OP_CONNECT)
             var sourceKey = source.register(selector, SelectionKey.OP_READ)
 
-            var handleSocket: () -> Boolean
+            var handleSocket: () -> Boolean = { false }
             var handleSource: () -> Boolean
             var handleBoth: () -> Boolean
 
@@ -653,6 +739,7 @@ class MpdTimeoutInhibitor(remote: SocketAddress, onConnected: () -> Unit, onShut
             }
 
             val readResponseAndThen: ((ByteBuffer) -> () -> Boolean) -> Boolean = {
+                Log.d("MPD", "readResponseAndThen")
                 readResponseAndThenRec(ByteBuffer.allocate(0), 1, it)
             }
 
@@ -660,7 +747,7 @@ class MpdTimeoutInhibitor(remote: SocketAddress, onConnected: () -> Unit, onShut
                 false
             }
 
-            var onCommand: () -> Boolean = { false }
+            var onCommand: (Boolean) -> Boolean = { _ -> false }
 
             // First arg - The buffer to write to the sink after sending the 'idle' command or null to not write anything to the sink
             var writeIdle: (ByteBuffer?) -> Boolean = { false }
@@ -676,14 +763,34 @@ class MpdTimeoutInhibitor(remote: SocketAddress, onConnected: () -> Unit, onShut
                         while (buffer.position() < buffer.limit()) sink.write(buffer)
                     }
 
-                    handleSource = onCommand
+                    handleSource = { onCommand(true) }
+                    handleBoth = {
+                        readResponseAndThen {
+                            if (it.limit() != 3) {
+                                Log.d("MPD", "Starting update")
+                                onUpdate()
+                                Log.d("MPD", "Finished")
+                            }
+
+                            handleSource()
+                            handleSocket
+                        }
+                    }
 
                     //handleBoth = idleBoth
                     socketKey.interestOps(SelectionKey.OP_READ);
                     {
                         readResponseAndThen {
+                            if (it.limit() != 3) {
+                                Log.d("MPD", "Starting update")
+                                onUpdate()
+                                Log.d("MPD", "Finished")
+                            }
+
                             socketKey.interestOps(SelectionKey.OP_WRITE);
-                            { writeIdle(buffer) }
+
+                            handleBoth = { onCommand(false) }
+                            { writeIdle(null) }
                         }
                     }
                 }
@@ -691,11 +798,14 @@ class MpdTimeoutInhibitor(remote: SocketAddress, onConnected: () -> Unit, onShut
                 true
             }
 
-            writeIdle = { writeIdleRec(ByteBuffer.allocate(5).put("idle\n".toByteArray()).flip() as ByteBuffer, it) }
+            writeIdle = {
+                Log.d("MPD", "writeIdle with buffer ${it.toString()}")
+                writeIdleRec(ByteBuffer.allocate(5).put("idle\n".toByteArray()).flip() as ByteBuffer, it) }
 
             // Write a packet to the MPD server
             var writeRequest: (ByteBuffer) -> Boolean = { false }
             writeRequest = { buffer ->
+                Log.d("MPD", "writeRequest")
                 socket.write(buffer)
                 handleSocket = if (buffer.position() < buffer.limit()) {
                     { writeRequest(buffer) }
@@ -715,6 +825,7 @@ class MpdTimeoutInhibitor(remote: SocketAddress, onConnected: () -> Unit, onShut
             // Send a 'noidle' command to the MPD server
             var sendNoIdle: (ByteBuffer, ByteBuffer) -> Boolean = { _, _ -> false }
             sendNoIdle = { noidle: ByteBuffer, buffer: ByteBuffer ->
+                Log.d("MPD", "Sending noidle")
                 socket.write(noidle)
                 handleSocket = if (noidle.position() != noidle.limit()) {
                     { sendNoIdle(noidle, buffer) }
@@ -731,7 +842,8 @@ class MpdTimeoutInhibitor(remote: SocketAddress, onConnected: () -> Unit, onShut
                 true
             }
 
-            onCommand = {
+            onCommand = { shouldWriteNoIdle ->
+                Log.d("MPD", "onCommand")
                 var buffer = ByteBuffer.allocate(4)
                 // To ease the implementation, switch source to blocking mode until we read the entire command
                 sourceKey.cancel()
@@ -755,8 +867,13 @@ class MpdTimeoutInhibitor(remote: SocketAddress, onConnected: () -> Unit, onShut
                     source.configureBlocking(false)
                     sourceKey = source.register(selector, SelectionKey.OP_READ)
                     socketKey.interestOps(SelectionKey.OP_WRITE)
-                    handleSocket = { sendNoIdle(ByteBuffer.allocate(7).put("noidle\n".toByteArray()).flip() as ByteBuffer, buffer) }
-                    // If another request comes in from the pipe while we are handling one then it must be a coming from a stop()
+                    handleSocket = if (shouldWriteNoIdle) {
+                            { sendNoIdle(ByteBuffer.allocate(7).put("noidle\n".toByteArray()).flip() as ByteBuffer, buffer) }
+                        } else {
+                            { writeRequest(buffer) }
+                        }
+
+                    // If another request comes in from the pipe while we are handling one then it must be a coming from a shutdown request
                     handleSource = cancel
                     handleBoth = cancel
                     true
@@ -785,26 +902,23 @@ class MpdTimeoutInhibitor(remote: SocketAddress, onConnected: () -> Unit, onShut
             }
 
             handleSource = cancel
-            //handleBoth = {
-            //    readResponseAndThen(ByteBuffer.allocate(0), 1) {
-            //        { writeIdle(null) }
-            //    }
-            //}
+            handleBoth = cancel
 
             while (true) {
                 val keyCount = selector.select()
 
                 if (keyCount == 2) {
-                    break
-                    //if (!handleBoth())
-                    //    break
+                    Log.d("MPD", "Handling both socket and source")
+                    if (!handleBoth())
+                        break
                 } else {
                     if (selector.selectedKeys().first() == socketKey) {
+                        Log.i("MPD", "Handling socket")
                         if (!handleSocket()) {
-                            // TODO: Notify the subscriber that the connection was closed by the peer
                             break
                         }
                     } else {
+                        Log.i("MPD", "Handling source")
                         if (!handleSource()) {
                             break
                         }
@@ -829,6 +943,7 @@ class MpdTimeoutInhibitor(remote: SocketAddress, onConnected: () -> Unit, onShut
     // NOTE: send() IS NOT THREAD SAFE
     // send a null to shutdown the inhibitor
     fun send(command: String?): String? {
+        Log.i("MPD", "Handling ${command.toString()}")
         if (command == null) {
             requestPipe.sink().close()
             thread.join()
@@ -847,7 +962,9 @@ class MpdTimeoutInhibitor(remote: SocketAddress, onConnected: () -> Unit, onShut
             size = buffer.int
             buffer = ByteBuffer.allocate(size)
             readAll(resultPipe.source(), buffer)
+            Log.d("MPD", "Got a response of size $size")
         } catch (e: Exception) {
+            Log.d("MPD", "Exception while send()")
             return null
         }
 
