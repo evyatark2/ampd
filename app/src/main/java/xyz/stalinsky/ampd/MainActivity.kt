@@ -237,13 +237,17 @@ class MainActivity : ComponentActivity() {
         override fun onCustomCommand(controller: MediaController, command: SessionCommand, args: Bundle?): SessionResult {
             when (command) {
                 MusicService.COMMAND_MPD_CONNECTION_STATUS_CHANGED -> {
-                    when (args!!.getParcelable<MusicService.ConnectionState>(MusicService.COMMAND_ARG_MPD_CONNECTION_STATUS)) {
+                    when (args!!.getParcelable<MusicService.ConnectionState>(MusicService.COMMAND_ARG_MPD_CONNECTION_STATUS)!!) {
                         MusicService.ConnectionState.CONNECTED -> {
                             connectionState.value = MusicService.ConnectionState.CONNECTED
                             val params = MediaLibraryService.LibraryParams.Builder()
                                 .setExtras(Bundle().apply { putParcelable("", screenState.value as Screen.MainScreen) })
                                 .build()
-                            (controller as MediaBrowser).subscribe(controller.getLibraryRoot(params).get().mediaItem?.metadata?.mediaId!!, params)
+                            val root = (controller as MediaBrowser).getLibraryRoot(params).get().mediaItem?.metadata?.mediaId!!
+                            controller.subscribe(root, params).addListener({
+                                //val children = controller.getChildren(root, 0, Int.MAX_VALUE, params).get().mediaItems
+                                onChildrenChanged(controller, root, 0, params)
+                            }, executor)
                         }
 
                         MusicService.ConnectionState.CONNECTING -> {
@@ -333,7 +337,9 @@ class MainActivity : ComponentActivity() {
                             })
                             for (child in children!!) {
                                 val id = child.metadata?.getString(MediaMetadata.METADATA_KEY_MEDIA_ID)!!
-                                browser.subscribe(id, params)
+                                browser.subscribe(id, params).addListener({
+                                    onChildrenChanged(browser, id, 0, params)
+                                }, executor)
                             }
                         }
 
@@ -348,10 +354,13 @@ class MainActivity : ComponentActivity() {
                                             MutableStateFlow(null),
                                             MutableStateFlow(null))
                                         screenState.value = newScreen
+                                        val id = it.metadata?.getString(MediaMetadata.METADATA_KEY_MEDIA_ID)!!
                                         val newParams = MediaLibraryService.LibraryParams.Builder()
                                             .setExtras(Bundle().apply { putParcelable("", newScreen) })
                                             .build()
-                                        browser.subscribe(it.metadata?.getString(MediaMetadata.METADATA_KEY_MEDIA_ID)!!, newParams)
+                                        browser.subscribe(id, newParams).addListener({
+                                            onChildrenChanged(browser, id, 0, newParams)
+                                        }, executor)
                                     }
                                 }
 
@@ -404,10 +413,13 @@ class MainActivity : ComponentActivity() {
                                             }, { // onGoToArtist
                                             })
                                         screenState.value = newScreen
+                                        val id = it.metadata?.getString(MediaMetadata.METADATA_KEY_MEDIA_ID)!!
                                         val newParams = MediaLibraryService.LibraryParams.Builder()
                                             .setExtras(Bundle().apply { putParcelable("", newScreen) })
                                             .build()
-                                        browser.subscribe(it.metadata?.getString(MediaMetadata.METADATA_KEY_MEDIA_ID)!!, newParams)
+                                        browser.subscribe(id, newParams).addListener({
+                                            onChildrenChanged(browser, id, 0, newParams)
+                                        }, executor)
                                     }
                                 }
 

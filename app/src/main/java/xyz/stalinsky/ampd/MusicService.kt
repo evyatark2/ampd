@@ -259,8 +259,6 @@ class MusicService : MediaLibraryService() {
                 subscriptions[controller]!!.add(parentId)
             }
 
-            session.notifyChildrenChanged(controller, parentId, rootNodes.size, params)
-
             return LibraryResult.RESULT_SUCCESS
         }
 
