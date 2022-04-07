@@ -300,6 +300,10 @@ class MusicService : MediaLibraryService() {
                                    page: Int,
                                    pageSize: Int,
                                    params: LibraryParams?): LibraryResult {
+            if (connectionState != ConnectionState.CONNECTED) {
+                return LibraryResult(LibraryResult.RESULT_ERROR_INVALID_STATE)
+            }
+
             when {
                 parentId == "/" -> {
                     return LibraryResult(LibraryResult.RESULT_SUCCESS, rootNodes, params)
@@ -307,7 +311,8 @@ class MusicService : MediaLibraryService() {
 
                 parentId == "/artists" -> {
                     val artists = mutableListOf<MediaItem>()
-                    val reader = BufferedReader(StringReader(timeoutInhibitor.send("list artist group MUSICBRAINZ_ARTISTID\n")))
+                    val result = timeoutInhibitor.send("list artist group MUSICBRAINZ_ARTISTID\n") ?: return LibraryResult(LibraryResult.RESULT_ERROR_IO)
+                    val reader = BufferedReader(StringReader(result))
 
                     var artistId = reader.readLine()
 
@@ -353,8 +358,8 @@ class MusicService : MediaLibraryService() {
 
                 parentId == "/albums" -> {
                     val albums = mutableListOf<MediaItem>()
-                    var reader =
-                        BufferedReader(StringReader(timeoutInhibitor.send("list album group MUSICBRAINZ_ALBUMID group artist group MUSICBRAINZ_ARTISTID\n")))
+                    val result = timeoutInhibitor.send("list album group MUSICBRAINZ_ALBUMID group artist group MUSICBRAINZ_ARTISTID\n") ?: return LibraryResult(LibraryResult.RESULT_ERROR_IO)
+                    var reader = BufferedReader(StringReader(result))
 
                     var line = reader.readLine()
 
@@ -502,10 +507,11 @@ class MusicService : MediaLibraryService() {
 
                 parentId.startsWith("/artists") -> {
                     val artistId = parentId.drop("/artists".length)
-                    val reader = if (artistId.startsWith("/noid")) BufferedReader(StringReader(timeoutInhibitor.send("find \"(artist == \\\"${
+                    val result = timeoutInhibitor.send("find \"(artist == \\\"${
                         artistId.drop("/noid/".length)
                             .replace("\"", "\\\\\\\"")
-                    }\\\")\"\n")))
+                    }\\\")\"\n") ?: return LibraryResult(LibraryResult.RESULT_ERROR_IO)
+                    val reader = if (artistId.startsWith("/noid")) BufferedReader(StringReader(result))
                     else BufferedReader(StringReader(timeoutInhibitor.send("find \"(MUSICBRAINZ_ARTISTID == \\\"${artistId.drop(1)}\\\")\"\n")))
 
                     val items = mutableListOf<MediaItem>()
@@ -579,17 +585,22 @@ class MusicService : MediaLibraryService() {
 
                 parentId.startsWith("/albums") -> {
                     val albumId = parentId.drop("/albums".length)
-                    val reader = if (albumId.startsWith("/noid/noid")) {
+                    val result = if (albumId.startsWith("/noid/noid")) {
                         val artist = albumId.drop("/noid/noid/".length).takeWhile { it != '/' }.replace("\"", "\\\\\\\"")
                         val album = albumId.drop("/noid/noid/".length).dropWhile { it != '/' }.drop(1).replace("\"", "\\\\\\\"")
-                        BufferedReader(StringReader(timeoutInhibitor.send("find \"((artist == \\\"$artist\\\") AND (album == \\\"$album\\\"))\" sort disc\n")))
+                        timeoutInhibitor.send("find \"((artist == \\\"$artist\\\") AND (album == \\\"$album\\\"))\" sort disc\n")
                     } else if (albumId.startsWith("/noid")) {
                         val artist = albumId.drop("/noid/".length).takeWhile { it != '/' }
                         val album = albumId.drop("/noid/".length).dropWhile { it != '/' }.drop(1).replace("\"", "\\\\\\\"")
-                        BufferedReader(StringReader(timeoutInhibitor.send("find \"((MUSICBRAINZ_ARTISTID == \\\"$artist\\\") AND (album == \\\"$album\\\"))\" sort disc\n")))
+                        timeoutInhibitor.send("find \"((MUSICBRAINZ_ARTISTID == \\\"$artist\\\") AND (album == \\\"$album\\\"))\" sort disc\n")
                     } else {
-                        BufferedReader(StringReader(timeoutInhibitor.send("find \"(MUSICBRAINZ_ALBUMID == \\\"${albumId.drop(1)}\\\")\" sort disc\n")))
+                        timeoutInhibitor.send("find \"(MUSICBRAINZ_ALBUMID == \\\"${albumId.drop(1)}\\\")\" sort disc\n")
                     }
+
+                    if (result == null)
+                        return LibraryResult(LibraryResult.RESULT_ERROR_IO)
+
+                    val reader = BufferedReader(StringReader(result))
 
                     val items = mutableListOf<MediaItem>()
                     var line = reader.readLine()
