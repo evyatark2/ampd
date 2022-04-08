@@ -8,7 +8,6 @@ import android.annotation.SuppressLint
 import android.net.Uri
 import android.os.Bundle
 import android.os.Parcelable
-import android.util.Log
 import androidx.media2.common.MediaItem
 import androidx.media2.common.MediaMetadata
 import androidx.media2.common.UriMediaItem
@@ -34,7 +33,6 @@ import java.net.InetSocketAddress
 import java.net.SocketAddress
 import java.nio.ByteBuffer
 import java.nio.channels.*
-import java.util.*
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 
@@ -95,31 +93,34 @@ class MusicService : MediaLibraryService() {
 
         private lateinit var timeoutInhibitor: MpdTimeoutInhibitor
 
-        // Key - ID of some parent MediaItem
-        // Value - A map of controllers and their LibraryParams that were used when subscribing to a particular ID
-        private val subscribers: MutableMap<String, MutableMap<MediaSession.ControllerInfo, LibraryParams?>> = HashMap()
-
         // Key - A connected controller
-        // Value - A list of IDs that the controller is subscribed to
-        private val subscriptions: MutableMap<MediaSession.ControllerInfo, MutableSet<String>> = HashMap()
+        // Value - A map of subscribed items and the number of times the controller subscribed to this item
+        private val subscribers: MutableMap<MediaSession.ControllerInfo, MutableMap<String, Int>> = hashMapOf()
+
+        // Key - A parent ID
+        // Value - The number of controllers that are subscribed to this item
+        private val subscriptions: MutableMap<String, Int> = hashMapOf()
 
         private var mediaLibrary: String? = null
 
-        // Key - An ID of a MediaItem
-        // Value - The MediaItem
-        private val mediaItems: MutableMap<String, MediaItem> = hashMapOf()
+        // Key - A connected controller
+        // Value - A map of parent IDs this controller has gotten using getChildren() and the number of times they called getChildren() on this item
+        private val cache: MutableMap<MediaSession.ControllerInfo, MutableMap<String, Int>> = hashMapOf()
 
         // Key - an ID of a parent MediaItem
         // Value - A pair where the first value is a reference count of controllers that point to this key in the map 'cache'
         // and the second value is a list of IDs that are the children
         private val refCounts: MutableMap<String, Pair<Int, Set<String>>> = hashMapOf()
 
-        // Key - A connected controller
-        // Value - A list of parent IDs this controller has gotten using getChildren()
-        private val cache: MutableMap<MediaSession.ControllerInfo, MutableSet<String>> = hashMapOf()
+        // Key - An ID of a MediaItem
+        // Value - A pair where the first value is a reference count and the second value is the MediaItem
+        // Used as a cache for items that were fetched using getChildren() so that onCreateMediaItem() can return the appropriate mediaItem when
+        // the controller requests it using its mediaId
+        private val mediaItems: MutableMap<String, Pair<Int, MediaItem>> = hashMapOf()
 
         override fun onConnect(session: MediaSession, controller: MediaSession.ControllerInfo): SessionCommandGroup {
-            cache[controller] = hashSetOf()
+            cache[controller] = hashMapOf()
+            subscribers[controller] = hashMapOf()
             return SessionCommandGroup.Builder()
                 .addAllPredefinedCommands(SessionCommand.COMMAND_VERSION_2)
                 .addCommand(COMMAND_SET_MPD_ADDRESS)
@@ -162,12 +163,8 @@ class MusicService : MediaLibraryService() {
                         timeoutInhibitor = MpdTimeoutInhibitor(InetSocketAddress(host, port ?: -1), {
                             changeConnectionState(session, ConnectionState.CONNECTED)
                         }, {
-                            Log.d("MusicService", "UPDATING")
-                            for (id in subscribers) {
-                                for (subscription in id.value) {
-                                    (session as MediaLibrarySession).notifyChildrenChanged(subscription.key, id.key, 0, subscription.value)
-                                }
-                            }
+                            for (id in subscriptions)
+                                (session as MediaLibrarySession).notifyChildrenChanged(id.key, 0, null)
                         }) {
                             changeConnectionState(session, ConnectionState.DISCONNECTED)
                         }
@@ -181,7 +178,29 @@ class MusicService : MediaLibraryService() {
                     if (args == null || !args.containsKey(COMMAND_ARG_PARENT_ID))
                         return SessionResult(SessionResult.RESULT_ERROR_BAD_VALUE, null)
 
-                    cache[controller]!!.remove(args.getString(COMMAND_ARG_PARENT_ID))
+                    val id = args.getString(COMMAND_ARG_PARENT_ID)!!
+
+                    if (!cache[controller]!!.contains(id))
+                        return SessionResult(SessionResult.RESULT_ERROR_INVALID_STATE, null)
+
+                    if (cache[controller]!![id]!! == 1) {
+                        if (refCounts[id]!!.first == 1) {
+                            for (item in refCounts[id]!!.second) {
+                                if (mediaItems[item]!!.first == 1)
+                                    mediaItems.remove(item)
+                                else
+                                    mediaItems[item] = Pair(mediaItems[item]!!.first - 1, mediaItems[item]!!.second)
+                            }
+
+                            refCounts.remove(id)
+                        } else {
+                            refCounts[id] = Pair(refCounts[id]!!.first - 1, refCounts[id]!!.second)
+                        }
+
+                        cache[controller]!!.remove(id)
+                    } else {
+                        cache[controller]!![id] = cache[controller]!![id]!! - 1
+                    }
                 }
             }
 
@@ -189,25 +208,33 @@ class MusicService : MediaLibraryService() {
         }
 
         override fun onDisconnected(session: MediaSession, controller: MediaSession.ControllerInfo) {
-            for (id in subscriptions[controller]!!) {
-                subscribers[id]!!.remove(controller)
-                if (subscribers[id]!!.isEmpty())
-                    subscribers.remove(id)
+            // Remove subscriptions
+            for (id in subscribers[controller]!!) {
+                // If all the subscriptions to this item come from this single controller then remove the ID
+                if (subscriptions[id.key] == id.value) {
+                    subscriptions.remove(id.key)
+                } else {
+                    subscriptions[id.key] = subscriptions[id.key]!! - id.value
+                }
             }
 
-            subscriptions.remove(controller)
+            subscribers.remove(controller)
 
-            for (id in cache[controller]!!) {
+            // Remove fetched items
+            for (id in cache[controller]!!.keys) {
                 val pair = refCounts[id]!!
                 if (pair.first == 1) {
                     for (item in pair.second) {
-                        mediaItems.remove(item)
+                        if (mediaItems[item]!!.first == 1)
+                            mediaItems.remove(item)
+                        else
+                            mediaItems[item] = Pair(mediaItems[item]!!.first - 1, mediaItems[item]!!.second)
                     }
 
                     refCounts.remove(id)
+                } else {
+                    refCounts[id] = Pair(pair.first - 1, pair.second)
                 }
-
-                refCounts[id] = Pair(pair.first - 1, pair.second)
             }
 
             cache.remove(controller)
@@ -242,21 +269,24 @@ class MusicService : MediaLibraryService() {
         }
 
         override fun onCreateMediaItem(session: MediaSession, controller: MediaSession.ControllerInfo, mediaId: String) =
-            mediaItems[mediaId]
+            mediaItems[mediaId]?.second
 
         @SuppressLint("RestrictedApi")
         override fun onSubscribe(session: MediaLibrarySession, controller: MediaSession.ControllerInfo, parentId: String, params: LibraryParams?): Int {
             // TODO: Handle root nodes differently
             if (parentId != "/") {
-                if (!subscribers.containsKey(parentId))
-                    subscribers[parentId] = hashMapOf(controller to params)
+                // Increase refcount of the item
+                if (!subscriptions.containsKey(parentId))
+                    subscriptions[parentId] = 1
                 else
-                    subscribers[parentId]!![controller] = params
+                    subscriptions[parentId] = subscriptions[parentId]!! + 1
 
-                if (!subscriptions.containsKey(controller))
-                    subscriptions[controller] = hashSetOf()
-
-                subscriptions[controller]!!.add(parentId)
+                // Increase the number of times or add the item to the set of subscribed items
+                if (subscribers[controller]!!.contains(parentId)) {
+                    subscribers[controller]!![parentId] = subscribers[controller]!![parentId]!! + 1
+                } else {
+                    subscribers[controller]!![parentId] = 1
+                }
             }
 
             return LibraryResult.RESULT_SUCCESS
@@ -265,14 +295,24 @@ class MusicService : MediaLibraryService() {
         @SuppressLint("RestrictedApi")
         override fun onUnsubscribe(session: MediaLibrarySession, controller: MediaSession.ControllerInfo, parentId: String): Int {
             if (parentId != "/") {
-                if (!subscribers.containsKey(parentId))
+                if (!subscriptions.containsKey(parentId))
+                    return LibraryResult.RESULT_ERROR_BAD_VALUE
+
+                if (!subscribers[controller]!!.containsKey(parentId)) {
                     return LibraryResult.RESULT_ERROR_INVALID_STATE
+                }
 
-                subscribers[parentId]?.remove(controller)
-                if (subscribers[parentId]!!.isEmpty())
-                    subscribers.remove(parentId)
+                var refCount = subscriptions[parentId]!!
+                if (refCount == 1)
+                    subscriptions.remove(parentId)
+                else
+                    subscriptions[parentId] = refCount - 1
 
-                subscriptions[controller]?.remove(parentId)
+                refCount = subscribers[controller]!![parentId]!!
+                if (refCount == 1)
+                    subscribers[controller]!!.remove(parentId)
+                else
+                    subscribers[controller]!![parentId] = refCount - 1
             }
 
             return LibraryResult.RESULT_SUCCESS
@@ -570,15 +610,19 @@ class MusicService : MediaLibraryService() {
                             mediaItems.remove(item)
                     }
 
-                    mediaItems.putAll(items.associateBy({ it.metadata!!.getString(MediaMetadata.METADATA_KEY_MEDIA_ID)!! }, { it }))
+                    items.forEach {
+                        val id = it.metadata!!.getString(MediaMetadata.METADATA_KEY_MEDIA_ID)!!
+                        mediaItems[id] = Pair(mediaItems[id]?.first?.plus(1) ?: 1, mediaItems[id]?.second ?: it)
+                    }
+
                     val set = hashSetOf<String>()
                     items.forEach {
                         set.add(it.metadata!!.getString(MediaMetadata.METADATA_KEY_MEDIA_ID)!!)
                     }
 
-                    refCounts[parentId] = Pair(refCounts[parentId]?.first ?: 1, set)
+                    refCounts[parentId] = Pair(refCounts[parentId]?.first?.plus(1) ?: 1, set)
 
-                    cache[controller]?.add(parentId)
+                    cache[controller]?.put(parentId, cache[controller]?.get(parentId)?.plus(1) ?: 1)
 
                     return LibraryResult(LibraryResult.RESULT_SUCCESS, items, params)
                 }
@@ -661,18 +705,18 @@ class MusicService : MediaLibraryService() {
                             mediaItems.remove(item)
                     }
 
-                    mediaItems.putAll(items.associateBy({ it.metadata!!.getString(MediaMetadata.METADATA_KEY_MEDIA_ID)!! }, { it }))
+                    items.forEach {
+                        val id = it.metadata!!.getString(MediaMetadata.METADATA_KEY_MEDIA_ID)!!
+                        mediaItems[id] = Pair(mediaItems[id]?.first?.plus(1) ?: 1, mediaItems[id]?.second ?: it)
+                    }
+
                     val set = hashSetOf<String>()
                     items.forEach {
                         set.add(it.metadata!!.getString(MediaMetadata.METADATA_KEY_MEDIA_ID)!!)
                     }
 
-                    if (!cache[controller]!!.contains(parentId))
-                        refCounts[parentId] = Pair(refCounts[parentId]?.first?.plus(1) ?: 1, set)
-                    else
-                        refCounts[parentId] = Pair(refCounts[parentId]!!.first, set)
-
-                    cache[controller]?.add(parentId)
+                    refCounts[parentId] = Pair(refCounts[parentId]?.first?.plus(1) ?: 1, set)
+                    cache[controller]?.put(parentId, cache[controller]?.get(parentId)?.plus(1) ?: 1)
 
                     return LibraryResult(LibraryResult.RESULT_SUCCESS, items, params)
                 }
