@@ -568,7 +568,7 @@ class MusicService : MediaLibraryService() {
                             when {
                                 line.startsWith("Artist: ") -> artistName = line.drop("Artist: ".length)
 
-                                line.startsWith("MUSICBRAINZ_ALBUMID: ") -> albumId = line.drop("MUSICBRAINZ_ALBUMID: ".length)
+                                line.startsWith("MUSICBRAINZ_ALBUMID: ") -> albumId = "/albums/${line.drop("MUSICBRAINZ_ALBUMID: ".length)}"
 
                                 line.startsWith("Album: ") -> albumTitle = line.drop("Album: ".length)
 
@@ -592,11 +592,11 @@ class MusicService : MediaLibraryService() {
                                 .putString(MediaMetadata.METADATA_KEY_ALBUM_ART_URI, "${mediaLibrary}/${filename.substringBeforeLast('/')}/cover.jpg")
                                 .setExtras(Bundle().apply {
                                     putString(METADATA_EXTRA_ARTIST_ID, parentId)
-                                    putString(METADATA_EXTRA_ALBUM_ID, if (albumId.isEmpty()) {
-                                        if (parentId.startsWith("/artists/noid")) "/albums/noid/noid/$artistName/$albumTitle"
-                                        else "/albums/noid/${artistId.drop(1)}/$albumTitle"
-                                    } else {
-                                        "albums/$albumId"
+                                    putString(METADATA_EXTRA_ALBUM_ID, albumId.ifEmpty {
+                                        if (parentId.startsWith("/artists/noid"))
+                                            "/albums/noid/noid/$artistName/$albumTitle"
+                                        else
+                                            "/albums/noid/${artistId.drop(1)}/$albumTitle"
                                     })
                                 })
                                 .build())
@@ -660,7 +660,7 @@ class MusicService : MediaLibraryService() {
                         line = reader.readLine()
                         while (!line.startsWith("file: ") && line != "OK") {
                             when {
-                                line.startsWith("MUSICBRAINZ_ARTISTID: ") -> artistId = line.drop("MUSICBRAINZ_ARTISTID: ".length)
+                                line.startsWith("MUSICBRAINZ_ARTISTID: ") -> artistId = "/artists/${line.drop("MUSICBRAINZ_ARTISTID: ".length)}"
 
                                 line.startsWith("Artist: ") -> artistName = line.drop("Artist: ".length)
 
@@ -691,7 +691,7 @@ class MusicService : MediaLibraryService() {
                                 .putLong(MediaMetadata.METADATA_KEY_TRACK_NUMBER, track)
                                 .putString(MediaMetadata.METADATA_KEY_ALBUM_ART_URI, "${mediaLibrary}/${filename.substringBeforeLast('/')}/cover.jpg")
                                 .setExtras(Bundle().apply {
-                                    putString(METADATA_EXTRA_ARTIST_ID, artistId.ifEmpty { "/artists/$artistName" })
+                                    putString(METADATA_EXTRA_ARTIST_ID, artistId.ifEmpty { "/artists/noid/$artistName" })
                                     putString(METADATA_EXTRA_ALBUM_ID, parentId)
                                 })
                                 .build())
@@ -749,7 +749,7 @@ class MusicService : MediaLibraryService() {
         const val COMMAND_ARG_PARENT_ID = "xyz.stalinsky.ampd.MusicService.COMMAND_EXTRA_PUT_CHILDREN.0"
 
         const val METADATA_EXTRA_ARTIST_ID = "xyz.stalinsky.MusicService.METADATA_EXTRA_ARTIST_ID"
-        const val METADATA_EXTRA_ALBUM_ID = "xyz.stalinsky.MusicService.METADATA_EXTRA_ARTIST_ID"
+        const val METADATA_EXTRA_ALBUM_ID = "xyz.stalinsky.MusicService.METADATA_EXTRA_ALBUM_ID"
     }
 }
 

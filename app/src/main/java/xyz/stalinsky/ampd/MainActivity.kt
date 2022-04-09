@@ -408,6 +408,17 @@ class MainActivity : ComponentActivity() {
                                     }, { // onAddToQueue
                                         browser.addPlaylistItem(browser.playlist?.size ?: 0, (screenState.value as Screen.AlbumScreen).tracks.value!![it].first).get()
                                     }, { // onGoToArtist
+                                        backstack.push(screenState.value)
+                                        val id = (screenState.value as Screen.AlbumScreen).tracks.value!![it].second.artistId
+                                        val screen = Screen.ArtistScreen(id, (screenState.value as Screen.AlbumScreen).tracks.value!![it].second.artist)
+                                        screenState.value = screen
+                                        browser.subscribe(id, null).addListener({
+                                            if (screens.contains(id))
+                                                screens[id]!!.add(screen)
+                                            else
+                                                screens[id] = mutableListOf(screen)
+                                            onChildrenChanged(browser, id, 0, null)
+                                        }, executor)
                                     })
                                 screenState.value = screen
                                 val id = it.metadata?.getString(MediaMetadata.METADATA_KEY_MEDIA_ID)!!
@@ -889,7 +900,7 @@ fun TrackView(track: Track, showDisc: Boolean, onPlayNext: () -> Unit, onAddToQu
                         onGoToArtist()
                         expanded = false
                     }) {
-                        Text("Go to album")
+                        Text("Go to artist")
                     }
                 }
             }
@@ -940,7 +951,7 @@ sealed interface Screen {
         }
     }
 
-    class ArtistScreen(val id: String, val artistName: String, ) : Screen {
+    class ArtistScreen(val id: String, val artistName: String) : Screen {
         private val songs_: MutableStateFlow<List<Pair<String, Song>>?> = MutableStateFlow(null)
         val songs: StateFlow<List<Pair<String, Song>>?> = songs_
 
