@@ -126,6 +126,7 @@ class MusicService : MediaLibraryService() {
                 .addCommand(COMMAND_SET_MPD_ADDRESS)
                 .addCommand(COMMAND_SET_MEDIA_LIBRARY)
                 .addCommand(COMMAND_CONNECT)
+                .addCommand(COMMAND_PUT_CHILDREN)
                 .build()
         }
 
