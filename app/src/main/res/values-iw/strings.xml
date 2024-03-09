@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">AMPD</string>
+    <string name="artists">אמנים</string>
+    <string name="albums">אלבומים</string>
+    <string name="settings">הגדרות</string>
+    <string name="tabs">טאבים</string>
+    <string name="add_to_queue">הוסף לתור</string>
+    <string name="play_next">Play Next</string>
+    <string name="songs">Songs</string>
+    <string name="genres">Genres</string>
+    <string name="music_library_host">Music Library Host</string>
+    <string name="music_library_port">Music Library Port</string>
+    <string name="use_tls_with_mpd">Use TLS with MPD</string>
+    <string name="mpd_host">MPD Host</string>
+    <string name="mpd_port">MPD Port</string>
+</resources>

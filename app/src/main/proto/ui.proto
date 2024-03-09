@@ -1,0 +1,27 @@
+syntax = "proto3";
+
+option java_package = "xyz.stalinsky.ampd";
+option java_multiple_files = true;
+
+message Settings {
+  int32 default_tab = 1;
+
+  enum TabType {
+    TAB_TYPE_ARTISTS = 0;
+    TAB_TYPE_ALBUMS = 1;
+    TAB_TYPE_SONGS = 2;
+    TAB_TYPE_GENRES = 3;
+  }
+
+  message Tab {
+    TabType type = 1;
+    bool enabled = 2;
+  }
+
+  repeated Tab tabs = 2;
+  bool mpdTls = 3;
+  string mpdHost = 4;
+  uint32 mpdPort = 5;
+  string libraryHost = 6;
+  uint32 libraryPort = 7;
+}
