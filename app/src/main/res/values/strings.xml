@@ -1,0 +1,7 @@
+<resources>
+    <string name="app_name">AMPD</string>
+    <string name="artists">Artists</string>
+    <string name="albums">Albums</string>
+    <string name="settings">Settings</string>
+    <string name="tabs">Tabs</string>
+</resources>
