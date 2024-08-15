@@ -10,30 +10,21 @@ import javax.inject.Inject
 class AlbumsRepository @Inject constructor(private val mpd: MpdRemoteDataSource) {
     fun getAllAlbums() =
         mpd.fetchAlbumIds().map {
-            var list: MutableList<Album>? = null
-            if (it != null) {
-                list = mutableListOf()
-                for (id in it) {
-                    val title = mpd.fetchAlbumTitleById(id)
-                    val artistId = mpd.fetchAlbumArtistId(id)
-                    if (title != null && artistId != null) {
-                        list?.add(Album(id, title, artistId))
-                    } else {
-                        list = null
-                        break
+            it?.let {
+                buildList {
+                    for (id in it) {
+                        val title = mpd.fetchAlbumTitleById(id)
+                        val artistId = mpd.fetchAlbumArtistId(id)
+                        if (title != null && artistId != null) {
+                            add(Album(id, title, artistId))
+                        } else {
+                            break
+                        }
                     }
                 }
             }
-
-            list?.toList()
         }
 
-    suspend fun getAlbumById(id: String): Album? {
-        val title = mpd.fetchAlbumTitleById(id)
-        val artistId = mpd.fetchAlbumArtistId(id)
-        return if (title != null)
-            Album(id, title, artistId ?: "")
-        else
-            null
-    }
+    suspend fun getAlbumById(id: String) =
+        mpd.fetchAlbumTitleById(id)?.let { Album(id, it, mpd.fetchAlbumArtistId(id) ?: "") }
 }
