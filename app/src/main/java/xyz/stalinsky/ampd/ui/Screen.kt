@@ -56,12 +56,10 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
-import androidx.navigation.createGraph
 import androidx.navigation.navArgument
 import io.ktor.network.sockets.InetSocketAddress
 import io.ktor.network.sockets.SocketAddress
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import xyz.stalinsky.ampd.Settings
@@ -77,23 +75,38 @@ import xyz.stalinsky.ampd.ui.viewmodel.AlbumViewModel
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun Main(main: MainViewModel = hiltViewModel()) {
+fun Main(viewModel: MainViewModel = hiltViewModel()) {
     val state = rememberPlayerSheetScaffoldState()
     val navController = rememberNavController()
 
     val scope = rememberCoroutineScope()
 
-    val loading by main.loading.collectAsState()
-    val playing by main.playing.collectAsState()
-    val currentItem by main.currentItem.collectAsState()
-    val queue by main.queue.collectAsState()
-    val duration by main.duration.collectAsState()
+    val loading by viewModel.loading.collectAsState()
+    val playing by viewModel.playing.collectAsState()
+    val currentItem by viewModel.currentItem.collectAsState()
+    val queue by viewModel.queue.collectAsState()
+    val duration by viewModel.duration.collectAsState()
 
-    val graph = remember {
-        navController.createGraph("main") {
+    val host by viewModel.mpdHost.collectAsState()
+    val port by viewModel.mpdPort.collectAsState()
+    val tls by viewModel.mpdTls.collectAsState()
+    var force by remember { mutableStateOf(false) }
 
+    if (!force) {
+        LaunchedEffect(host, port, tls) {
+            val addr = withContext(Dispatchers.IO) {
+                try {
+                    InetSocketAddress(host, port)
+                } catch (e: Throwable) {
+                    null
+                }
+            }
+            viewModel.connect(addr, tls)
         }
+    } else {
+        force = false
     }
+
     val route by navController.currentBackStackEntryAsState()
     PlayerSheetScaffold(state, Modifier, {
         Player(route?.destination?.route == "main" || route?.destination?.route == "artist/{id}" || route?.destination?.route == "album/{id}",
@@ -102,30 +115,30 @@ fun Main(main: MainViewModel = hiltViewModel()) {
             playing,
             if (currentItem != -1) { queue?.run { Pair(this, currentItem) } } else null,
             {
-                main.progress()
+                viewModel.progress()
             }, duration, {
                 scope.launch {
-                    main.play()
+                    viewModel.play()
                 }
             }, {
                 scope.launch {
-                    main.pause()
+                    viewModel.pause()
                 }
             }, {
                 scope.launch {
-                    main.seek(it)
+                    viewModel.seek(it)
                 }
             }, {
                 scope.launch {
-                    main.next()
+                    viewModel.next()
                 }
             }, {
                 scope.launch {
-                    main.prev()
+                    viewModel.prev()
                 }
             }, {
                 scope.launch {
-                    main.skipTo(it)
+                    viewModel.skipTo(it)
                 }
             })
     }, {
@@ -147,7 +160,7 @@ fun Main(main: MainViewModel = hiltViewModel()) {
     }) {
         NavHost(navController, "main") {
             composable("main") {
-                MainScreen(navController)
+                MainScreen({ force = true }, navController)
             }
 
             composable("settings") {
@@ -160,12 +173,12 @@ fun Main(main: MainViewModel = hiltViewModel()) {
 
             composable("artist/{id}", listOf(navArgument("id") {type = NavType.StringType })) {
                 val id = it.arguments!!.getString("id")
-                ArtistScreen(id!!, navController)
+                ArtistScreen(id!!, { force = true }, navController)
             }
 
             composable("album/{id}", listOf(navArgument("id") { type = NavType.StringType })) {
                 val id = it.arguments!!.getString("id")
-                AlbumScreen(id!!, navController)
+                AlbumScreen(id!!, { force = true }, navController)
             }
         }
     }
@@ -174,98 +187,93 @@ fun Main(main: MainViewModel = hiltViewModel()) {
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun MainScreen(
+    onRetry: () -> Unit,
     nav: NavController,
     viewModel: MainViewModel = hiltViewModel(),
 ) {
     val tabs by viewModel.tabs.collectAsState()
     val defaultTab by viewModel.defaultTab.collectAsState()
 
-    val host by viewModel.mpdHost.collectAsState()
-    val port by viewModel.mpdPort.collectAsState()
-    val tls by viewModel.mpdTls.collectAsState()
+    Column(Modifier) {
+        val scope = rememberCoroutineScope()
 
-    TopLevelScreen(host, port, tls, { addr, tls -> viewModel.connect(addr, tls)} ) { onRetry ->
-        Column(Modifier) {
-            val scope = rememberCoroutineScope()
-
-            val pagerState = key(defaultTab) {
-                rememberPagerState(initialPage = defaultTab) {
-                    tabs.size
-                }
+        val pagerState = key(defaultTab) {
+            rememberPagerState(initialPage = defaultTab) {
+                tabs.size
             }
+        }
 
-            TabRow(selectedTabIndex = pagerState.currentPage) {
-                tabs.forEachIndexed { i, tab ->
-                    if (tab.enabled) {
-                        when (tab.type) {
-                            Settings.TabType.TAB_TYPE_ARTISTS ->
-                                Tab(
-                                    selected = i == pagerState.currentPage,
-                                    onClick = {
-                                        scope.launch {
-                                            pagerState.animateScrollToPage(i)
-                                        }
-                                    },
-                                    text = { Text(stringResource(R.string.artists)) })
-
-                            Settings.TabType.TAB_TYPE_ALBUMS ->
-                                Tab(
-                                    selected = i == pagerState.currentPage,
-                                    onClick = {
-                                        scope.launch {
-                                            pagerState.animateScrollToPage(i)
-                                        }
-                                    },
-                                    text = { Text(stringResource(R.string.albums)) })
-
-                            Settings.TabType.TAB_TYPE_SONGS ->
-                                Tab(
-                                    selected = i == pagerState.currentPage,
-                                    onClick = {
-                                        scope.launch {
-                                            pagerState.animateScrollToPage(i)
-                                        }
-                                    },
-                                    text = { Text(stringResource(R.string.songs)) })
-
-                            Settings.TabType.TAB_TYPE_GENRES ->
-                                Tab(
-                                    selected = i == pagerState.currentPage,
-                                    onClick = {
-                                        scope.launch {
-                                            pagerState.animateScrollToPage(i)
-                                        }
-                                    },
-                                    text = { Text(stringResource(R.string.genres)) })
-
-                            Settings.TabType.UNRECOGNIZED -> TODO()
-                            null -> TODO()
-                        }
-                    }
-                }
-            }
-
-            HorizontalPager(pagerState, Modifier.fillMaxSize()) {
-                val tab = tabs[it]
+        TabRow(selectedTabIndex = pagerState.currentPage) {
+            tabs.forEachIndexed { i, tab ->
                 if (tab.enabled) {
                     when (tab.type) {
-                        Settings.TabType.TAB_TYPE_ARTISTS -> {
-                            ArtistsScreen(onRetry, {
-                                nav.navigate("artist/${it}")
-                            })
-                        }
+                        Settings.TabType.TAB_TYPE_ARTISTS ->
+                            Tab(
+                                selected = i == pagerState.currentPage,
+                                onClick = {
+                                    scope.launch {
+                                        pagerState.animateScrollToPage(i)
+                                    }
+                                },
+                                text = { Text(stringResource(R.string.artists)) })
 
-                        Settings.TabType.TAB_TYPE_ALBUMS -> {
-                            AlbumsScreen(onRetry, {
-                                nav.navigate("album/${it}")
-                            })
-                        }
+                        Settings.TabType.TAB_TYPE_ALBUMS ->
+                            Tab(
+                                selected = i == pagerState.currentPage,
+                                onClick = {
+                                    scope.launch {
+                                        pagerState.animateScrollToPage(i)
+                                    }
+                                },
+                                text = { Text(stringResource(R.string.albums)) })
 
-                        Settings.TabType.TAB_TYPE_SONGS -> TODO()
-                        Settings.TabType.TAB_TYPE_GENRES -> TODO()
+                        Settings.TabType.TAB_TYPE_SONGS ->
+                            Tab(
+                                selected = i == pagerState.currentPage,
+                                onClick = {
+                                    scope.launch {
+                                        pagerState.animateScrollToPage(i)
+                                    }
+                                },
+                                text = { Text(stringResource(R.string.songs)) })
+
+                        Settings.TabType.TAB_TYPE_GENRES ->
+                            Tab(
+                                selected = i == pagerState.currentPage,
+                                onClick = {
+                                    scope.launch {
+                                        pagerState.animateScrollToPage(i)
+                                    }
+                                },
+                                text = { Text(stringResource(R.string.genres)) })
+
                         Settings.TabType.UNRECOGNIZED -> TODO()
                         null -> TODO()
                     }
+                }
+            }
+        }
+
+        HorizontalPager(pagerState, Modifier.fillMaxSize()) {
+            val tab = tabs[it]
+            if (tab.enabled) {
+                when (tab.type) {
+                    Settings.TabType.TAB_TYPE_ARTISTS -> {
+                        ArtistsScreen(onRetry, {
+                            nav.navigate("artist/${it}")
+                        })
+                    }
+
+                    Settings.TabType.TAB_TYPE_ALBUMS -> {
+                        AlbumsScreen(onRetry, {
+                            nav.navigate("album/${it}")
+                        })
+                    }
+
+                    Settings.TabType.TAB_TYPE_SONGS -> TODO()
+                    Settings.TabType.TAB_TYPE_GENRES -> TODO()
+                    Settings.TabType.UNRECOGNIZED -> TODO()
+                    null -> TODO()
                 }
             }
         }
@@ -492,113 +500,79 @@ fun Album(title: String, artist: String, onClick: () -> Unit, onAddToQueue: () -
 }
 
 @Composable
-fun ArtistScreen(id: String, nav: NavController, viewModel: ArtistViewModel = hiltViewModel()) {
-    val host by viewModel.mpdHost.collectAsState()
-    val port by viewModel.mpdPort.collectAsState()
-    val tls by viewModel.mpdTls.collectAsState()
+fun ArtistScreen(id: String, onRetry: () -> Unit, nav: NavController, viewModel: ArtistViewModel = hiltViewModel()) {
+    var name: String? by remember { mutableStateOf(null) }
+    val songs by viewModel.songs.collectAsState()
+    LaunchedEffect(id) {
+        name = viewModel.getName(id)
+    }
 
-    TopLevelScreen(host, port, tls, { addr, tls -> viewModel.connect(addr, tls)}) {
-        var name: String? by remember { mutableStateOf(null) }
-        val songs by viewModel.songs.collectAsState()
-        LaunchedEffect(id) {
-            name = viewModel.getName(id)
-        }
-
-        ConnectionScreen(songs, it) {
-            val scope = rememberCoroutineScope()
-            LazyColumn(Modifier.fillMaxSize()) {
-                itemsIndexed(it) { i, song ->
-                    ListItem(headlineContent = {
-                        SingleLineText(song.title)
-                    }, Modifier.clickable {
-                        scope.launch {
-                            viewModel.player.setQueue(it.map {
-                                val metadata = MediaMetadata.Builder()
-                                    .setTitle(it.title)
-                                    .setArtist(it.artistId)
-                                    .setAlbumTitle(it.albumId)
-                                    .build()
-                                MediaItem.Builder()
-                                    .setMediaId(it.id)
-                                    .setMediaMetadata(metadata)
-                                    .setUri(Uri.parse(""))
-                                    .build()
-                            }, i)
-                        }
-                    }, supportingContent = {
-                        SingleLineText(name ?: "")
-                    })
-                }
+    ConnectionScreen(songs, onRetry) {
+        val scope = rememberCoroutineScope()
+        LazyColumn(Modifier.fillMaxSize()) {
+            itemsIndexed(it) { i, song ->
+                ListItem(headlineContent = {
+                    SingleLineText(song.title)
+                }, Modifier.clickable {
+                    scope.launch {
+                        viewModel.setQueue(it.map {
+                            val metadata = MediaMetadata.Builder()
+                                .setTitle(it.title)
+                                .setArtist(it.artistId)
+                                .setAlbumTitle(it.albumId)
+                                .build()
+                            MediaItem.Builder()
+                                .setMediaId(it.id)
+                                .setMediaMetadata(metadata)
+                                .setUri(Uri.parse(""))
+                                .build()
+                        }, i)
+                    }
+                }, supportingContent = {
+                    SingleLineText(name ?: "")
+                })
             }
         }
     }
 }
 
 @Composable
-fun AlbumScreen(id: String, nav: NavController, viewModel: AlbumViewModel = hiltViewModel()) {
-    val host by viewModel.mpdHost.collectAsState()
-    val port by viewModel.mpdPort.collectAsState()
-    val tls by viewModel.mpdTls.collectAsState()
+fun AlbumScreen(id: String, onRetry: () -> Unit, nav: NavController, viewModel: AlbumViewModel = hiltViewModel()) {
+    var name: String? by remember { mutableStateOf(null) }
+    val tracks by viewModel.trackList.collectAsState()
+    LaunchedEffect(id) {
+        name = viewModel.getName(id)
+    }
 
-    TopLevelScreen(host, port, tls, { addr, tls -> viewModel.connect(addr, tls) }) {
-        var name: String? by remember { mutableStateOf(null) }
-        val tracks by viewModel.trackList.collectAsState()
-        LaunchedEffect(id) {
-            name = viewModel.getName(id)
-        }
-
-        ConnectionScreen(tracks, it) {
-            val scope = rememberCoroutineScope()
-            LazyColumn(Modifier .fillMaxSize(1f)) {
-                itemsIndexed(it) { i, track ->
-                    ListItem(headlineContent = {
-                        SingleLineText(track.title)
-                    }, Modifier.clickable {
-                        scope.launch {
-                            viewModel.player.setQueue(it.map {
-                                val metadata = MediaMetadata.Builder()
-                                    .setTitle(it.title)
-                                    .setArtist(it.artistId)
-                                    .setAlbumTitle(it.albumId)
-                                    .build()
-                                MediaItem.Builder()
-                                    .setMediaId(it.id)
-                                    .setMediaMetadata(metadata)
-                                    .setUri(Uri.parse(""))
-                                    .build()
-                            }, i)
-                        }
-                    }, supportingContent = {
-                        SingleLineText(name ?: "")
-                    }, leadingContent = {
-                        SingleLineText(track.track.toString())
-                    })
-                }
+    ConnectionScreen(tracks, onRetry) {
+        val scope = rememberCoroutineScope()
+        LazyColumn(Modifier .fillMaxSize(1f)) {
+            itemsIndexed(it) { i, track ->
+                ListItem(headlineContent = {
+                    SingleLineText(track.title)
+                }, Modifier.clickable {
+                    scope.launch {
+                        viewModel.setQueue(it.map {
+                            val metadata = MediaMetadata.Builder()
+                                .setTitle(it.title)
+                                .setArtist(it.artistId)
+                                .setAlbumTitle(it.albumId)
+                                .build()
+                            MediaItem.Builder()
+                                .setMediaId(it.id)
+                                .setMediaMetadata(metadata)
+                                .setUri(Uri.parse(""))
+                                .build()
+                        }, i)
+                    }
+                }, supportingContent = {
+                    SingleLineText(name ?: "")
+                }, leadingContent = {
+                    SingleLineText(track.track.toString())
+                })
             }
         }
     }
-}
-
-@Composable
-fun TopLevelScreen(host: String, port: Int, tls: Boolean, onConnect: suspend (SocketAddress?, Boolean) -> Unit, content: @Composable (onRetry: () -> Unit) -> Unit) {
-    var force by remember { mutableStateOf(false) }
-
-    if (!force) {
-        LaunchedEffect(host, port, tls) {
-            val addr = withContext(Dispatchers.IO) {
-                try {
-                    InetSocketAddress(host, port)
-                } catch (e: Throwable) {
-                    null
-                }
-            }
-            onConnect(addr, tls)
-        }
-    } else {
-        force = false
-    }
-
-    content { force = true }
 }
 
 @Composable

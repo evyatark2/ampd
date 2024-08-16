@@ -115,31 +115,31 @@ class PlayerRepository @Inject constructor(private val controller: MediaControll
         }
     }
 
-    suspend fun play() {
+    fun play() {
         controller.play()
     }
 
-    suspend fun pause() {
+    fun pause() {
         controller.pause()
     }
 
-    suspend fun next() {
+    fun next() {
         controller.seekToNext()
     }
 
-    suspend fun previous() {
+    fun previous() {
         controller.seekToPrevious()
     }
 
-    suspend fun seek(pos: Long) {
+    fun seek(pos: Long) {
         controller.seekTo(pos)
     }
 
-    suspend fun skipTo(i: Int) {
+    fun skipTo(i: Int) {
         controller.seekToDefaultPosition(i)
     }
 
-    suspend fun setQueue(items: List<MediaItem>, i: Int) {
+    fun setQueue(items: List<MediaItem>, i: Int) {
         controller.stop()
         controller.setMediaItems(items)
         controller.seekTo(i, 0)
@@ -147,17 +147,17 @@ class PlayerRepository @Inject constructor(private val controller: MediaControll
         controller.prepare()
     }
 
-    suspend fun addToQueue(items: List<MediaItem>) {
+    fun addToQueue(items: List<MediaItem>) {
         controller.addMediaItems(items)
         controller.prepare()
     }
 
-    suspend fun playNext(items: List<MediaItem>) {
+    fun playNext(items: List<MediaItem>) {
         controller.addMediaItems(controller.currentMediaItemIndex + 1, items)
         controller.prepare()
     }
 
-    suspend fun progress(): Long {
+    fun progress(): Long {
         return controller.currentPosition
     }
 }

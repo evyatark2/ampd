@@ -3,6 +3,7 @@ package xyz.stalinsky.ampd.ui.viewmodel
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import androidx.media3.common.MediaItem
 import dagger.hilt.android.lifecycle.HiltViewModel
 import io.ktor.network.sockets.SocketAddress
 import kotlinx.coroutines.flow.SharingStarted
@@ -17,21 +18,18 @@ import xyz.stalinsky.ampd.ui.MpdConnectionState
 import javax.inject.Inject
 
 @HiltViewModel
-class AlbumViewModel @Inject constructor(handle: SavedStateHandle, private val mpd: MpdRepository, private val tracks: TracksRepository, private val albums: AlbumsRepository, val player: PlayerRepository, val settings: SettingsRepository) : ViewModel() {
+class AlbumViewModel @Inject constructor(handle: SavedStateHandle, tracks: TracksRepository, private val albums: AlbumsRepository, private val player: PlayerRepository, val settings: SettingsRepository) : ViewModel() {
     val id = handle.get<String>(ALBUM_ID_SAVED_STATE_KEY)!!
-    val mpdTls = settings.mpdTls.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
-    val mpdHost = settings.mpdHost.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), "")
-    val mpdPort = settings.mpdPort.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0)
     val trackList = tracks.getTracksForAlbum(id).map {
         it?.map { MpdConnectionState.Ok(it) }?.getOrElse { MpdConnectionState.Error(it) } ?: MpdConnectionState.Loading()
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), MpdConnectionState.Loading())
 
-    suspend fun connect(addr: SocketAddress?, tls: Boolean) {
-        mpd.connect(addr, tls)
-    }
-
     suspend fun getName(id: String) =
         albums.getAlbumById(id)?.title
+
+    fun setQueue(items: List<MediaItem>, i: Int) {
+        player.setQueue(items, i)
+    }
 
     companion object {
         private const val ALBUM_ID_SAVED_STATE_KEY = "id"
