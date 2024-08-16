@@ -3,7 +3,6 @@ package xyz.stalinsky.ampd.ui.viewmodel
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
-import io.ktor.network.sockets.InetSocketAddress
 import io.ktor.network.sockets.SocketAddress
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.SharingStarted

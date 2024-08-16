@@ -5,6 +5,7 @@ import io.ktor.network.sockets.SocketAddress
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.DelicateCoroutinesApi
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.channels.ReceiveChannel
 import kotlinx.coroutines.channels.SendChannel
@@ -31,14 +32,17 @@ class MpdRemoteDataSource @Inject constructor() {
     private val resChannel = Channel<Response?>()
 
     private val subscribersMutex = Mutex()
-    private val subscribers = mutableListOf<Pair<SendChannel<Response.Response?>, MpdRequest>>()
+    private val subscribers = mutableListOf<Pair<SendChannel<Result<MpdResponse>?>, MpdRequest>>()
 
     private suspend fun request(req: MpdRequest): MpdResponse? {
         mutex.lock()
         return try {
             reqChannel.send(Request.Fetch(req))
             (resChannel.receive() as Response.Fetch?)?.res
-        } catch (e: Exception) {
+        } catch (e: CancellationException) {
+            withContext(NonCancellable) {
+                resChannel.receive()
+            }
             e.printStackTrace()
             null
         } finally {
@@ -46,11 +50,17 @@ class MpdRemoteDataSource @Inject constructor() {
         }
     }
 
-    private suspend fun subscribe(req: MpdRequest): ReceiveChannel<Response.Response?> {
+    private suspend fun subscribe(req: MpdRequest): ReceiveChannel<Result<MpdResponse>?>? {
         mutex.lock()
         return try {
             reqChannel.send(Request.Subscribe(req))
             (resChannel.receive() as Response.Subscribe).res
+        } catch (e: CancellationException) {
+            withContext(NonCancellable) {
+                resChannel.receive()
+            }
+            e.printStackTrace()
+            null
         } finally {
             mutex.unlock()
         }
@@ -82,6 +92,7 @@ class MpdRemoteDataSource @Inject constructor() {
             if (addr == null)
                 return@withContext
 
+            var exp: Throwable? = null
             val client = try {
                 MpdClient(addr, tls)
             } catch (e: CancellationException) {
@@ -91,7 +102,7 @@ class MpdRemoteDataSource @Inject constructor() {
                 while (iter.hasNext()) {
                     val s = iter.next()
                     try {
-                        s.first.send(Response.Response.Err(e))
+                        s.first.send(Result.failure(e))
                     } catch (e: CancellationException) {
                         if (s.first.isClosedForSend) {
                             s.first.close()
@@ -101,106 +112,131 @@ class MpdRemoteDataSource @Inject constructor() {
                         }
                     }
                 }
-                return@withContext
+                exp = e
+                null
             }
 
-            subscribersMutex.lock()
-            try {
-                val iter = subscribers.iterator()
-                while (iter.hasNext()) {
-                    val s = iter.next()
-                    try {
-                        s.first.send(Response.Response.Ok(client.request(s.second)))
-                    } catch (e: CancellationException) {
-                        if (s.first.isClosedForSend) {
-                            s.first.close()
-                            iter.remove()
-                        } else {
-                            return@withContext
+            if (client != null) {
+                subscribersMutex.lock()
+                try {
+                    val iter = subscribers.iterator()
+                    while (iter.hasNext()) {
+                        val s = iter.next()
+                        try {
+                            val res = Result.success(client.request(s.second))
+                            s.first.send(res)
+                        } catch (e: CancellationException) {
+                            if (s.first.isClosedForSend) {
+                                s.first.close()
+                                iter.remove()
+                            } else {
+                                return@withContext
+                            }
+                        } catch (e: Throwable) {
+                            s.first.send(Result.failure(e))
                         }
-                    } catch (e: Throwable) {
-                        s.first.send(Response.Response.Err(e))
+                    }
+                } finally {
+                    subscribersMutex.unlock()
+                }
+            }
+
+            try {
+                while (isActive) {
+                    val req = reqChannel.receive()
+                    if (client != null) {
+                        when (req) {
+                            is Request.Fetch -> {
+                                try {
+                                    resChannel.send(Response.Fetch(client.request(req.req)))
+                                } catch (e: CancellationException) {
+                                    e.printStackTrace()
+                                } catch (e: Throwable) {
+                                    resChannel.send(null)
+                                }
+                            }
+
+                            is Request.Subscribe -> {
+                                Log.i("TAG", "Subscription")
+                                val source = Channel<Result<MpdResponse>?>()
+                                subscribersMutex.lock()
+                                subscribers.add(Pair(source, req.req))
+                                subscribersMutex.unlock()
+                                resChannel.send(Response.Subscribe(source))
+                                try {
+                                    source.send(Result.success(client.request(req.req)))
+                                } catch (e: Throwable) {
+                                    source.send(Result.failure(e))
+                                }
+                            }
+                        }
+                    } else {
+                        when (req) {
+                            is Request.Fetch -> {
+                                try {
+                                    resChannel.send(Response.Fetch(null))
+                                } catch (e: CancellationException) {
+                                    e.printStackTrace()
+                                } catch (e: Throwable) {
+                                    resChannel.send(null)
+                                }
+                            }
+
+                            is Request.Subscribe -> {
+                                Log.i("TAG", "Subscription")
+                                val source = Channel<Result<MpdResponse>?>()
+                                subscribersMutex.lock()
+                                subscribers.add(Pair(source, req.req))
+                                subscribersMutex.unlock()
+                                resChannel.send(Response.Subscribe(source))
+                                try {
+                                    source.send(Result.failure(exp!!))
+                                } catch (e: CancellationException) {
+                                    e.printStackTrace()
+                                }
+                            }
+                        }
                     }
                 }
             } finally {
-                subscribersMutex.unlock()
+                client?.close()
             }
-
-            while (isActive) {
-                val req = reqChannel.receive()
-                when (req) {
-                    is Request.Fetch -> {
-                        try {
-                            resChannel.send(Response.Fetch(client.request(req.req)))
-                        } catch (e: CancellationException) {
-                            e.printStackTrace()
-                        } catch (e: Throwable) {
-                            resChannel.send(null)
-                        }
-                    }
-
-                    is Request.Subscribe -> {
-                        Log.i("TAG", "Subscription")
-                        val source = Channel<Response.Response?>()
-                        subscribersMutex.lock()
-                        subscribers.add(Pair(source, req.req))
-                        subscribersMutex.unlock()
-                        resChannel.send(Response.Subscribe(source))
-                        try {
-                            source.send(Response.Response.Ok(client.request(req.req)))
-                        } catch (e: Throwable) {
-                            source.send(Response.Response.Err(e))
-                        }
-                    }
-                }
-            }
-
-            client.close()
         }
     }
 
-    fun fetchArtistIds(): Flow<List<String>?> = flow {
+    fun fetchArtistIds() = flow {
         val channel = subscribe(MpdRequest.MpdListRequest(MpdTag.MUSICBRAINZ_ARTISTID, null, listOf()))
+            ?: return@flow
 
         try {
             while (true) {
                 val res = channel.receive()
-                when (res) {
-                    is Response.Response.Ok -> {
-                        val list = mutableListOf<String>()
-                        val res = res.res as MpdResponse.MpdListResponse
+                val test = res?.map {
+                    val list = buildList {
+                        val res = it as MpdResponse.MpdListResponse
                         for (kv in res.data) {
-                            list.add(kv.value)
+                            add(kv.value)
                         }
-                        emit(list)
                     }
-                    is Response.Response.Err -> {
-                        throw res.e
-                    }
-                    null -> {
-                        emit(null)
-                    }
+                    list
                 }
+                emit(test)
             }
         } finally {
             channel.cancel()
         }
     }
 
-    fun fetchArtistSongs(id: String): Flow<List<Song>?> = flow {
+    fun fetchArtistSongs(id: String): Flow<Result<List<Song>>?> = flow {
         val channel = subscribe(MpdRequest.MpdFindRequest(MpdFilter.Equal(MpdTag.MUSICBRAINZ_ARTISTID, id), null))
+            ?: return@flow
 
         try {
             while (true) {
                 val res = channel.receive()
-                when (res) {
-                    is Response.Response.Err -> {
-                        throw res.e
-                    }
-
-                    is Response.Response.Ok -> {
+                emit(res?.map {
                         val list = mutableListOf<Song>()
-                        val iter = (res.res as MpdResponse.MpdListResponse).data.iterator()
+                        val iter = (it as MpdResponse.MpdListResponse).data.iterator()
                         var file = iter.next().value
                         var id = ""
                         var title = ""
@@ -222,13 +258,8 @@ class MpdRemoteDataSource @Inject constructor() {
                                 "MUSICBRAINZ_ALBUMID" -> albumId = kv.value
                             }
                         }
-                        emit(list)
-                    }
-
-                    null -> {
-                        emit(null)
-                    }
-                }
+                        list
+                })
             }
         } finally {
             channel.cancel()
@@ -249,31 +280,22 @@ class MpdRemoteDataSource @Inject constructor() {
         }
     }
 
-    fun fetchAlbumIds(): Flow<List<String>?> = flow {
+    fun fetchAlbumIds() = flow {
         val channel = subscribe(MpdRequest.MpdListRequest(MpdTag.MUSICBRAINZ_ALBUMID, null, listOf()))
+            ?: return@flow
 
         try {
             while(true) {
                 val res = channel.receive()
 
-                when (res) {
-                    is Response.Response.Err -> {
-                        throw res.e
+                emit(res?.map {
+                    val list = mutableListOf<String>()
+                    val res = it as MpdResponse.MpdListResponse
+                    for (kv in res.data) {
+                        list.add(kv.value)
                     }
-
-                    is Response.Response.Ok -> {
-                        val list = mutableListOf<String>()
-                        val res = res.res as MpdResponse.MpdListResponse
-                        for (kv in res.data) {
-                            list.add(kv.value)
-                        }
-                        emit(list)
-                    }
-
-                    null -> {
-                        emit(null)
-                    }
-                }
+                    list
+                })
             }
         } catch (e: Throwable) {
             channel.cancel()
@@ -306,18 +328,15 @@ class MpdRemoteDataSource @Inject constructor() {
 
     fun fetchAlbumTracks(id: String) = flow {
         val channel = subscribe(MpdRequest.MpdFindRequest(MpdFilter.Equal(MpdTag.MUSICBRAINZ_ALBUMID, id), null))
+            ?: return@flow
 
         try {
             while (true) {
                 val res = channel.receive()
-                when (res) {
-                    is Response.Response.Err -> {
-                        throw res.e
-                    }
 
-                    is Response.Response.Ok -> {
+                emit(res?.map {
                         val list = mutableListOf<Track>()
-                        val iter = (res.res as MpdResponse.MpdListResponse).data.iterator()
+                        val iter = (it as MpdResponse.MpdListResponse).data.iterator()
                         var file = iter.next().value
                         var id = ""
                         var title = ""
@@ -343,13 +362,8 @@ class MpdRemoteDataSource @Inject constructor() {
                                 "Track" -> track = kv.value.toInt()
                             }
                         }
-                        emit(list)
-                    }
-
-                    null -> {
-                        emit(null)
-                    }
-                }
+                        list
+                })
             }
         } finally {
             channel.cancel()
@@ -362,11 +376,7 @@ class MpdRemoteDataSource @Inject constructor() {
     }
 
     private sealed interface Response {
-        class Fetch(val res: MpdResponse?) : MpdRemoteDataSource.Response
-        class Subscribe(val res: ReceiveChannel<Response?>) : MpdRemoteDataSource.Response
-        sealed interface Response {
-            class Err(val e: Throwable) : Response
-            class Ok(val res: MpdResponse) : Response
-        }
+        class Fetch(val res: MpdResponse?) : Response
+        class Subscribe(val res: ReceiveChannel<Result<MpdResponse>?>) : Response
     }
 }

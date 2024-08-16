@@ -10,7 +10,7 @@ import javax.inject.Inject
 class AlbumsRepository @Inject constructor(private val mpd: MpdRemoteDataSource) {
     fun getAllAlbums() =
         mpd.fetchAlbumIds().map {
-            it?.let {
+            it?.map {
                 buildList {
                     for (id in it) {
                         val title = mpd.fetchAlbumTitleById(id)
