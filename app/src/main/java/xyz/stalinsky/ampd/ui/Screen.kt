@@ -577,28 +577,26 @@ fun AlbumScreen(id: String, onRetry: () -> Unit, nav: NavController, viewModel: 
 
 @Composable
 fun <T> ConnectionScreen(state: MpdConnectionState<T>, onRetry: () -> Unit, content: @Composable (T) -> Unit) {
-    Column {
-        when (state) {
-            is MpdConnectionState.Error -> {
-                Box(Modifier.fillMaxSize()) {
-                    Column(Modifier.align(Alignment.Center)) {
-                        Text(state.err.message ?: "")
-                        Button({
-                            onRetry()
-                        }) {
-                            Text("Retry")
-                        }
+    when (state) {
+        is MpdConnectionState.Error -> {
+            Box(Modifier.fillMaxSize()) {
+                Column(Modifier.align(Alignment.Center)) {
+                    Text(state.err.message ?: "", Modifier.align(Alignment.CenterHorizontally))
+                    Button({
+                        onRetry()
+                    }, Modifier.align(Alignment.CenterHorizontally)) {
+                        Text("Retry")
                     }
                 }
             }
-            is MpdConnectionState.Loading -> {
-                Box(Modifier.fillMaxSize()) {
-                    CircularProgressIndicator(Modifier.align(Alignment.Center))
-                }
+        }
+        is MpdConnectionState.Loading -> {
+            Box(Modifier.fillMaxSize()) {
+                CircularProgressIndicator(Modifier.align(Alignment.Center))
             }
-            is MpdConnectionState.Ok -> {
-                content(state.res)
-            }
+        }
+        is MpdConnectionState.Ok -> {
+            content(state.res)
         }
     }
 }
