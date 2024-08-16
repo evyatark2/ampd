@@ -5,8 +5,8 @@ import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.pager.HorizontalPager
@@ -58,7 +58,6 @@ import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import io.ktor.network.sockets.InetSocketAddress
-import io.ktor.network.sockets.SocketAddress
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -411,10 +410,7 @@ fun Artists(artists: List<Artist>,
             onClick: (Int) -> Unit,
             onAddToQueue: (Int) -> Unit,
             onPlayNext: (Int) -> Unit) {
-    LazyColumn(
-        Modifier
-            .fillMaxSize()
-            .padding(vertical = 8.dp)) {
+    LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(0.dp, 8.dp)) {
         itemsIndexed(artists) { i, artist ->
             Artist(artist.name, {
                 onClick(i)
@@ -472,10 +468,7 @@ fun AlbumsScreen(onRetry: () -> Unit, onClick: (String) -> Unit, viewModel: Albu
 
 @Composable
 fun Albums(albums: List<Album>, onClick: (Int) -> Unit, onAddToQueue: (Int) -> Unit, onPlayNext: (Int) -> Unit) {
-    LazyColumn(
-        Modifier
-            .fillMaxSize()
-            .padding(vertical = 8.dp)) {
+    LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(0.dp, 8.dp)) {
         itemsIndexed(albums) { i, album ->
             Album(album.title, album.artistId, {
                 onClick(i)
@@ -509,7 +502,7 @@ fun ArtistScreen(id: String, onRetry: () -> Unit, nav: NavController, viewModel:
 
     ConnectionScreen(songs, onRetry) {
         val scope = rememberCoroutineScope()
-        LazyColumn(Modifier.fillMaxSize()) {
+        LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(0.dp, 8.dp)) {
             itemsIndexed(it) { i, song ->
                 ListItem(headlineContent = {
                     SingleLineText(song.title)
@@ -546,7 +539,7 @@ fun AlbumScreen(id: String, onRetry: () -> Unit, nav: NavController, viewModel: 
 
     ConnectionScreen(tracks, onRetry) {
         val scope = rememberCoroutineScope()
-        LazyColumn(Modifier .fillMaxSize(1f)) {
+        LazyColumn(Modifier.fillMaxSize(1f), contentPadding = PaddingValues(0.dp, 8.dp)) {
             itemsIndexed(it) { i, track ->
                 ListItem(headlineContent = {
                     SingleLineText(track.title)
