@@ -107,7 +107,7 @@ sealed interface MpdRequest {
             add(type)
         }
         override fun toString() =
-            "list $type${if (filter != null) " \"$filter\"" else ""}${groups_.joinToString {
+            "list $type${if (filter != null) " \"$filter\"" else ""}${groups_.joinToString("") {
                 " group $it"
             }}\n"
     }
