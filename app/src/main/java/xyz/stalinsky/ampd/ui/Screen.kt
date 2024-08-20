@@ -25,6 +25,8 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.ListItem
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ProvideTextStyle
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Tab
 import androidx.compose.material3.TabRow
@@ -504,7 +506,7 @@ fun ArtistScreen(id: String, onRetry: () -> Unit, nav: NavController, viewModel:
         val scope = rememberCoroutineScope()
         LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(0.dp, 8.dp)) {
             itemsIndexed(it) { i, song ->
-                ListItem(headlineContent = {
+                ListItem({
                     SingleLineText(song.title)
                 }, Modifier.clickable {
                     scope.launch {
@@ -540,8 +542,16 @@ fun AlbumScreen(id: String, onRetry: () -> Unit, nav: NavController, viewModel: 
     ConnectionScreen(tracks, onRetry) {
         val scope = rememberCoroutineScope()
         LazyColumn(Modifier.fillMaxSize(1f), contentPadding = PaddingValues(0.dp, 8.dp)) {
+            var multiside = false
+            for (track in it) {
+                if (track.side != 1) {
+                    multiside = true
+                    break
+                }
+            }
+
             itemsIndexed(it) { i, track ->
-                ListItem(headlineContent = {
+                ListItem({
                     SingleLineText(track.title)
                 }, Modifier.clickable {
                     scope.launch {
@@ -561,7 +571,11 @@ fun AlbumScreen(id: String, onRetry: () -> Unit, nav: NavController, viewModel: 
                 }, supportingContent = {
                     SingleLineText(name ?: "")
                 }, leadingContent = {
-                    SingleLineText(track.track.toString())
+                    ProvideTextStyle(MaterialTheme.typography.labelMedium) {
+                        SingleLineText(
+                            "${if (multiside) "${track.side}-" else ""}${track.track}"
+                        )
+                    }
                 })
             }
         }
