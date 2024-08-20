@@ -5,14 +5,11 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.media3.common.MediaItem
 import dagger.hilt.android.lifecycle.HiltViewModel
-import io.ktor.network.sockets.SocketAddress
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import xyz.stalinsky.ampd.data.ArtistsRepository
-import xyz.stalinsky.ampd.data.MpdRepository
 import xyz.stalinsky.ampd.data.PlayerRepository
-import xyz.stalinsky.ampd.data.SettingsRepository
 import xyz.stalinsky.ampd.data.TracksRepository
 import xyz.stalinsky.ampd.ui.MpdConnectionState
 import javax.inject.Inject

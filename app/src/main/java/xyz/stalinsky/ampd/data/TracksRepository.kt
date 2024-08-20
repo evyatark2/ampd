@@ -1,8 +1,6 @@
 package xyz.stalinsky.ampd.data
 
-import kotlinx.coroutines.flow.Flow
 import xyz.stalinsky.ampd.datasource.MpdRemoteDataSource
-import xyz.stalinsky.ampd.model.Song
 import javax.inject.Inject
 import javax.inject.Singleton
 

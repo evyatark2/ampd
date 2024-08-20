@@ -7,16 +7,12 @@ import androidx.datastore.core.DataStoreFactory
 import androidx.datastore.core.Serializer
 import androidx.datastore.dataStore
 import androidx.datastore.dataStoreFile
-import androidx.datastore.migrations.SharedPreferencesMigration
 import com.google.protobuf.InvalidProtocolBufferException
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
 import dagger.hilt.android.qualifiers.ApplicationContext
 import dagger.hilt.components.SingletonComponent
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.map
 import xyz.stalinsky.ampd.Settings
 import xyz.stalinsky.ampd.SettingsKt
