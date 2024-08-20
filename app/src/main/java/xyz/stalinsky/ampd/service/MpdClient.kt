@@ -91,7 +91,7 @@ sealed interface MpdFilter {
 
     class Equal(private val tag: MpdTag, private val value: String) : MpdFilter {
         override fun toString() =
-            "($tag == '$value')"
+            "($tag == \\\"${value.replace("\"", "\\\\\\\"")}\\\")"
     }
 
     class And(private val fst: MpdFilter, private val snd: MpdFilter) : MpdFilter {
