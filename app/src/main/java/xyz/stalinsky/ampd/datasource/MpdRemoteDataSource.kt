@@ -208,23 +208,30 @@ class MpdRemoteDataSource @Inject constructor() {
     }
 
     fun fetchArtists() = flow {
-        val channel = subscribe(MpdRequest.MpdListRequest(MpdTag.Artist, null, listOf(MpdTag.MUSICBRAINZ_ARTISTID)))
+        val channel = subscribe(MpdRequest.MpdListRequest(MpdTag.Artist, null, listOf(MpdTag.ArtistSort, MpdTag.MUSICBRAINZ_ARTISTID)))
             ?: return@flow
 
         try {
             while (true) {
                 val res = channel.receive()
-                val test = res?.map {
-                    val list = buildList {
-                        val res = it as MpdResponse.MpdListResponse
-                        for (id in res.data) {
-                            val artistId = (id as MpdGroupNode.Node).data
-                            add(Artist(artistId, ((id as MpdGroupNode.Node).children[0] as MpdGroupNode.Leaf).data))
-                        }
+
+                data class SortArtist(val id: String, val name: String, val sort: String)
+
+                emit(res?.map() {
+                    val res = it as MpdResponse.MpdListResponse
+                    val out = mutableListOf<SortArtist>()
+                    res.data.mapTo(out) {
+                        val artistId = (it as MpdGroupNode.Node).data
+                        val artist = it.children[0] as MpdGroupNode.Node
+                        val sort = artist.data
+                        val name = (artist.children[0] as MpdGroupNode.Leaf).data
+                        SortArtist(artistId, name, sort)
                     }
-                    list
-                }
-                emit(test)
+                    out.sortBy {
+                        it.sort
+                    }
+                    out.map { Artist(it.id, it.name) }
+                })
             }
         } finally {
             channel.cancel()
