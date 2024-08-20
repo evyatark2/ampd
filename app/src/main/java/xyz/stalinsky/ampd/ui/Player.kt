@@ -29,6 +29,9 @@ import androidx.compose.material.icons.filled.SkipPrevious
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.ListItem
+import androidx.compose.material3.ListItemColors
+import androidx.compose.material3.ListItemDefaults
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -324,7 +327,7 @@ fun Player(
                         itemsIndexed(queue.first) { i, it ->
                             ListItem({ SingleLineText(it.mediaMetadata.title.toString()) }, Modifier.clickable {
                                 onQueueItemClicked(i)
-                            })
+                            }, colors = ListItemDefaults.colors().run { ListItemColors(if (i == queue.second) MaterialTheme.colorScheme.primaryContainer else containerColor, headlineColor, leadingIconColor, overlineColor, supportingTextColor, trailingIconColor, disabledHeadlineColor, disabledLeadingIconColor, disabledTrailingIconColor) })
                         }
                     }
                 }
