@@ -14,6 +14,7 @@ import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.withContext
+import xyz.stalinsky.ampd.model.Album
 import xyz.stalinsky.ampd.model.Artist
 import xyz.stalinsky.ampd.model.Song
 import xyz.stalinsky.ampd.model.Track
@@ -230,29 +231,6 @@ class MpdRemoteDataSource @Inject constructor() {
         }
     }
 
-    fun fetchArtistIds() = flow {
-        val channel = subscribe(MpdRequest.MpdListRequest(MpdTag.MUSICBRAINZ_ARTISTID, null, listOf()))
-            ?: return@flow
-
-        try {
-            while (true) {
-                val res = channel.receive()
-                val test = res?.map {
-                    val list = buildList {
-                        val res = it as MpdResponse.MpdListResponse
-                        for (v in res.data) {
-                            add((v as MpdGroupNode.Leaf).data)
-                        }
-                    }
-                    list
-                }
-                emit(test)
-            }
-        } finally {
-            channel.cancel()
-        }
-    }
-
     fun fetchArtistSongs(id: String): Flow<Result<List<Song>>?> = flow {
         val channel = subscribe(MpdRequest.MpdFindRequest(MpdFilter.Equal(MpdTag.MUSICBRAINZ_ARTISTID, id), null))
             ?: return@flow
@@ -285,17 +263,33 @@ class MpdRemoteDataSource @Inject constructor() {
         return ((res as MpdResponse.MpdListResponse?)?.data?.first() as MpdGroupNode.Leaf?)?.data
     }
 
-    fun fetchAlbumIds() = flow {
-        val channel = subscribe(MpdRequest.MpdListRequest(MpdTag.MUSICBRAINZ_ALBUMID, null, listOf()))
+    fun fetchAlbums() = flow {
+        val channel = subscribe(MpdRequest.MpdListRequest(MpdTag.Album, null, listOf(MpdTag.AlbumSort, MpdTag.MUSICBRAINZ_ALBUMID, MpdTag.MUSICBRAINZ_ALBUMARTISTID)))
             ?: return@flow
 
         try {
             while(true) {
                 val res = channel.receive()
 
+                data class SortAlbum(val id: String, val title: String, val sort: String, val artistId: String,)
+
                 emit(res?.map {
-                    (it as MpdResponse.MpdListResponse).data.map {
-                        (it as MpdGroupNode.Leaf).data
+                    val out = mutableListOf<SortAlbum>()
+                    (it as MpdResponse.MpdListResponse).data.flatMapTo(out) {
+                        val artistId = (it as MpdGroupNode.Node).data
+                        it.children.map {
+                            val albumId = (it as MpdGroupNode.Node).data
+                            val album = it.children[0] as MpdGroupNode.Node
+                            val sort = album.data
+                            val title = (album.children[0] as MpdGroupNode.Leaf).data
+                            SortAlbum(albumId, title, sort, artistId)
+                        }
+                    }
+                    out.sortBy {
+                        it.sort
+                    }
+                    out.map {
+                        Album(it.id, it.title, it.artistId)
                     }
                 })
             }
