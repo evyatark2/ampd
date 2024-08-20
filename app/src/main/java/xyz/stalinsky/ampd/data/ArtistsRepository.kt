@@ -9,16 +9,7 @@ import javax.inject.Singleton
 @Singleton
 class ArtistsRepository @Inject constructor(private val mpd: MpdRemoteDataSource) {
     fun getAllArtists() =
-        mpd.fetchArtistIds().map {
-            it?.map {
-                buildList {
-                    for (id in it) {
-                        val name = mpd.fetchArtistNameById(id)
-                        add(Artist(id, name ?: ""))
-                    }
-                }
-            }
-        }
+        mpd.fetchArtists()
 
     suspend fun getArtistById(id: String) =
         mpd.fetchArtistNameById(id)?.let { Artist(id, it) }

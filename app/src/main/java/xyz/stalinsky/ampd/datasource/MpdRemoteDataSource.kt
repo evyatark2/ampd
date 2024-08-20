@@ -14,10 +14,12 @@ import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.withContext
+import xyz.stalinsky.ampd.model.Artist
 import xyz.stalinsky.ampd.model.Song
 import xyz.stalinsky.ampd.model.Track
 import xyz.stalinsky.ampd.service.MpdClient
 import xyz.stalinsky.ampd.service.MpdFilter
+import xyz.stalinsky.ampd.service.MpdGroupNode
 import xyz.stalinsky.ampd.service.MpdRequest
 import xyz.stalinsky.ampd.service.MpdResponse
 import xyz.stalinsky.ampd.service.MpdTag
@@ -204,6 +206,30 @@ class MpdRemoteDataSource @Inject constructor() {
         }
     }
 
+    fun fetchArtists() = flow {
+        val channel = subscribe(MpdRequest.MpdListRequest(MpdTag.Artist, null, listOf(MpdTag.MUSICBRAINZ_ARTISTID)))
+            ?: return@flow
+
+        try {
+            while (true) {
+                val res = channel.receive()
+                val test = res?.map {
+                    val list = buildList {
+                        val res = it as MpdResponse.MpdListResponse
+                        for (id in res.data) {
+                            val artistId = (id as MpdGroupNode.Node).data
+                            add(Artist(artistId, ((id as MpdGroupNode.Node).children[0] as MpdGroupNode.Leaf).data))
+                        }
+                    }
+                    list
+                }
+                emit(test)
+            }
+        } finally {
+            channel.cancel()
+        }
+    }
+
     fun fetchArtistIds() = flow {
         val channel = subscribe(MpdRequest.MpdListRequest(MpdTag.MUSICBRAINZ_ARTISTID, null, listOf()))
             ?: return@flow
@@ -214,8 +240,8 @@ class MpdRemoteDataSource @Inject constructor() {
                 val test = res?.map {
                     val list = buildList {
                         val res = it as MpdResponse.MpdListResponse
-                        for (kv in res.data) {
-                            add(kv.value)
+                        for (v in res.data) {
+                            add((v as MpdGroupNode.Leaf).data)
                         }
                     }
                     list
@@ -235,30 +261,13 @@ class MpdRemoteDataSource @Inject constructor() {
             while (true) {
                 val res = channel.receive()
                 emit(res?.map {
-                        val list = mutableListOf<Song>()
-                        val iter = (it as MpdResponse.MpdListResponse).data.iterator()
-                        var file = iter.next().value
-                        var id = ""
-                        var title = ""
-                        var albumId = ""
-                        var artistId = ""
-                        for (kv in iter) {
-                            when (kv.key) {
-                                "file" -> {
-                                    list.add(Song(id, file, title, albumId, artistId))
-                                    file = kv.value
-                                    id = ""
-                                    artistId = ""
-                                    albumId = ""
-                                }
-
-                                "MUSICBRAINZ_TRACKID" -> id = kv.value
-                                "Title" -> title = kv.value
-                                "MUSICBRAINZ_ARTISTID" -> artistId = kv.value
-                                "MUSICBRAINZ_ALBUMID" -> albumId = kv.value
-                            }
-                        }
-                        list
+                    (it as MpdResponse.MpdFindResponse).data.map {
+                        Song(it.tags[MpdTag.MUSICBRAINZ_TRACKID] ?: "",
+                            it.file,
+                            it.tags[MpdTag.Title] ?: "",
+                            it.tags[MpdTag.MUSICBRAINZ_ALBUMID] ?: "",
+                            it.tags[MpdTag.MUSICBRAINZ_ARTISTID] ?: "")
+                    }
                 })
             }
         } finally {
@@ -268,16 +277,12 @@ class MpdRemoteDataSource @Inject constructor() {
 
     suspend fun fetchArtistNameById(id: String): String? {
         val res = request(MpdRequest.MpdListRequest(
-            MpdTag.ARTIST,
+            MpdTag.Artist,
             MpdFilter.Equal(MpdTag.MUSICBRAINZ_ARTISTID, id),
             listOf()
         ))
 
-        return if (res == null) {
-            null
-        } else {
-            (res as MpdResponse.MpdListResponse).data.first().value
-        }
+        return ((res as MpdResponse.MpdListResponse?)?.data?.first() as MpdGroupNode.Leaf?)?.data
     }
 
     fun fetchAlbumIds() = flow {
@@ -289,12 +294,9 @@ class MpdRemoteDataSource @Inject constructor() {
                 val res = channel.receive()
 
                 emit(res?.map {
-                    val list = mutableListOf<String>()
-                    val res = it as MpdResponse.MpdListResponse
-                    for (kv in res.data) {
-                        list.add(kv.value)
+                    (it as MpdResponse.MpdListResponse).data.map {
+                        (it as MpdGroupNode.Leaf).data
                     }
-                    list
                 })
             }
         } catch (e: Throwable) {
@@ -304,26 +306,18 @@ class MpdRemoteDataSource @Inject constructor() {
 
     suspend fun fetchAlbumTitleById(id: String): String? {
         val res = request(MpdRequest.MpdListRequest(
-                MpdTag.ALBUM,
+                MpdTag.Album,
                 MpdFilter.Equal(MpdTag.MUSICBRAINZ_ALBUMID, id),
                 listOf()
         ))
 
-        return if (res == null) {
-            null
-        } else {
-            (res as MpdResponse.MpdListResponse).data.first().value
-        }
+        return ((res as MpdResponse.MpdListResponse?)?.data?.first() as MpdGroupNode.Leaf?)?.data
     }
 
     suspend fun fetchAlbumArtistId(id: String): String? {
         val res = request(MpdRequest.MpdListRequest(MpdTag.MUSICBRAINZ_ARTISTID, MpdFilter.Equal(MpdTag.MUSICBRAINZ_ALBUMID, id), listOf()))
 
-        return if (res == null) {
-            null
-        } else {
-            (res as MpdResponse.MpdListResponse).data.first().value
-        }
+        return ((res as MpdResponse.MpdListResponse?)?.data?.first() as MpdGroupNode.Leaf?)?.data
     }
 
     fun fetchAlbumTracks(id: String) = flow {
@@ -335,34 +329,9 @@ class MpdRemoteDataSource @Inject constructor() {
                 val res = channel.receive()
 
                 emit(res?.map {
-                        val list = mutableListOf<Track>()
-                        val iter = (it as MpdResponse.MpdListResponse).data.iterator()
-                        var file = iter.next().value
-                        var id = ""
-                        var title = ""
-                        var albumId = ""
-                        var artistId = ""
-                        var side = 0
-                        var track = 0
-                        for (kv in iter) {
-                            when (kv.key) {
-                                "file" -> {
-                                    list.add(Track(id, file, title, albumId, artistId, side, track))
-                                    file = kv.value
-                                    id = ""
-                                    artistId = ""
-                                    albumId = ""
-                                }
-
-                                "MUSICBRAINZ_TRACKID" -> id = kv.value
-                                "Title" -> title = kv.value
-                                "MUSICBRAINZ_ARTISTID" -> artistId = kv.value
-                                "MUSICBRAINZ_ALBUMID" -> albumId = kv.value
-                                "Disc" -> side = kv.value.toInt()
-                                "Track" -> track = kv.value.toInt()
-                            }
-                        }
-                        list
+                    (it as MpdResponse.MpdFindResponse).data.map {
+                        Track(it.tags[MpdTag.MUSICBRAINZ_TRACKID] ?: "", it.file, it.tags[MpdTag.Title] ?: "", it.tags[MpdTag.MUSICBRAINZ_ALBUMID] ?: "", it.tags[MpdTag.MUSICBRAINZ_ARTISTID] ?: "", it.tags[MpdTag.Disc]?.toInt() ?: 0, it.tags[MpdTag.Track]?.toInt() ?: 0)
+                    }
                 })
             }
         } finally {

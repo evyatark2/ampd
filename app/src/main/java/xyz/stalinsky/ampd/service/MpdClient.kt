@@ -12,64 +12,47 @@ import io.ktor.utils.io.ByteWriteChannel
 import io.ktor.utils.io.readUTF8Line
 import io.ktor.utils.io.writeStringUtf8
 import kotlinx.coroutines.Dispatchers
+import java.io.EOFException
+import java.util.ArrayDeque
 
-sealed interface MpdDatum {
-    data class MpdKV(val key: String, val value: String) : MpdDatum
-
-    data class MpdBinary(val data: Array<Byte>) : MpdDatum {
-        override fun equals(other: Any?): Boolean {
-            if (this === other) return true
-            if (javaClass != other?.javaClass) return false
-
-            other as MpdBinary
-
-            return data.contentEquals(other.data)
-        }
-
-        override fun hashCode(): Int {
-            return data.contentHashCode()
-        }
-
-    }
-}
-
-enum class MpdTag(private val str: String) {
-    ARTIST("artist"),
-    ARTIST_SORT("artistsort"),
-    ALBUM("album"),
-    ALBUM_SORT("albumsort"),
-    ALBUM_ARTIST("albumartist"),
-    ALBUM_ARTIST_SORT("albumartistsort"),
-    TITLE("title"),
-    TITLE_SORT("titlesort"),
-    TRACK("track"),
-    NAME("name"),
-    GENERE("genre"),
-    MOOD("mood"),
-    DATE("date"),
-    ORIGINAL_DATE("originaldate"),
-    COMPOSER("composer"),
-    COMPOSER_SORT("composersort"),
-    PERFORMER("performer"),
-    CONDUCTOR("conductor"),
-    WORK("work"),
-    ENSEMBLE("ensemble"),
-    MOVEMENT("movement"),
-    MOVEMENT_NUMBER("movementnumber"),
-    LOCATION("location"),
-    GROUPING("grouping"),
-    COMMENT("comment"),
-    DISC("disc"),
-    LABEL("label"),
-    MUSICBRAINZ_ARTISTID("MUSICBRAINZ_ARTISTID"),
-    MUSICBRAINZ_ALBUMID("MUSICBRAINZ_ALBUMID"),
-    MUSICBRAINZ_ALBUMARTISTID("MUSICBRAINZ_ALBUMARTISTID"),
-    MUSICBRAINZ_TRACK_ID("musicbrainz_trackid"),
-    MUSICBRAINZ_RELEASE_GROUP_ID("musicbrainz_releasegroupid"),
-    MUSICBRAINZ_RELEASE_TRACK_ID("musicbrainz_releasetrackid"),
-    MUSICBRAINZ_WORK_ID("musicbrainz_workid"),;
-
-    override fun toString() = str
+enum class MpdTag {
+    Artist,
+    ArtistSort,
+    Album,
+    AlbumSort,
+    AlbumArtist,
+    AlbumArtistSort,
+    Title,
+    TitleSort,
+    Track,
+    Name,
+    Genre,
+    Mood,
+    Date,
+    OriginalDate,
+    Composer,
+    ComposerSort,
+    Performer,
+    Conductor,
+    Work,
+    Ensemble,
+    Movement,
+    MovementNumber,
+    ShowMovement,
+    Location,
+    Grouping,
+    Comment,
+    Disc,
+    Label,
+    MUSICBRAINZ_ARTISTID,
+    MUSICBRAINZ_ALBUMID,
+    MUSICBRAINZ_ALBUMARTISTID,
+    MUSICBRAINZ_TRACKID,
+    MUSICBRAINZ_RELEASEGROUPID,
+    MUSICBRAINZ_RELEASETRACKID,
+    MUSICBRAINZ_WORKID,
+    duration,
+    Format;
 }
 
 enum class MpdErrCode(val value: Int) {
@@ -88,16 +71,20 @@ enum class MpdErrCode(val value: Int) {
     EXIST(56),
 }
 
+sealed interface MpdGroupNode {
+    data class Node(val data: String, val children: List<MpdGroupNode>) : MpdGroupNode
+    data class Leaf(val data: String) : MpdGroupNode
+}
+
+data class MpdSong(
+    val file: String,
+    val tags: Map<MpdTag, String>)
+
 sealed interface MpdResponse {
-    class MpdListResponse(val data: List<MpdDatum.MpdKV>) : MpdResponse {
+    class MpdListResponse(val data: List<MpdGroupNode>) : MpdResponse
+    class MpdFindResponse(val data: List<MpdSong>) : MpdResponse
 
-    }
-
-    class MpdOkResponse(val data: List<MpdDatum>) : MpdResponse {
-
-    }
-
-    class ErrResponse(val code: MpdErrCode)
+    class MpdErrResponse(val code: MpdErrCode)
 }
 
 sealed interface MpdFilter {
@@ -114,9 +101,13 @@ sealed interface MpdFilter {
 }
 
 sealed interface MpdRequest {
-    data class MpdListRequest(private val type: MpdTag, private val filter: MpdFilter?, private val groups: List<MpdTag>) : MpdRequest {
+    class MpdListRequest(val type: MpdTag, val filter: MpdFilter?, private val groups_: List<MpdTag>) : MpdRequest {
+        val groups = buildList {
+            addAll(groups_)
+            add(type)
+        }
         override fun toString() =
-            "list $type${if (filter != null) " \"$filter\"" else ""}${groups.joinToString {
+            "list $type${if (filter != null) " \"$filter\"" else ""}${groups_.joinToString {
                 " group $it"
             }}\n"
     }
@@ -127,29 +118,88 @@ sealed interface MpdRequest {
     }
 }
 
-class MpdClient private constructor(private val addr: SocketAddress, private val tls: Boolean, private val socket: Socket, private var source: ByteReadChannel, private var sink: ByteWriteChannel) {
+class MpdClient private constructor(private val socket: Socket, private var source: ByteReadChannel, private var sink: ByteWriteChannel) {
 
     suspend fun request(req: MpdRequest): MpdResponse {
         sink.writeStringUtf8(req.toString())
 
-        when (req) {
-            is MpdRequest.MpdFindRequest,
-            is MpdRequest.MpdListRequest -> {
-                val data = mutableListOf<MpdDatum.MpdKV>()
-                while (true) {
-                    val line = source.readUTF8Line() ?: throw NullPointerException()
+        return when (req) {
+            is MpdRequest.MpdFindRequest -> {
+                var file: String
 
-                    if (line.startsWith("OK"))
-                        break
+                val line = source.readUTF8Line() ?: throw EOFException()
+                if (line == "OK") {
+                    return MpdResponse.MpdFindResponse(listOf())
+                } else {
+                    val split = line.split(": ", limit = 2)
+                    if (split.size != 2 || split.first() != "file")
+                        throw EOFException()
 
-                    val split = line.split(": ", ignoreCase = false, limit = 2)
-                    if (split.size != 2)
-                        throw IllegalStateException()
-
-                    data.add(MpdDatum.MpdKV(split.first(), split.last()))
+                    file = split.last()
                 }
 
-                return MpdResponse.MpdListResponse(data)
+                val list = mutableListOf<MpdSong>()
+                var map = mutableMapOf<MpdTag, String>()
+                while (true) {
+                    val line = source.readUTF8Line() ?: throw EOFException()
+
+                    if (line == "OK")
+                        break
+
+                    val split = line.split(": ", limit = 2)
+                    if (split.size != 2)
+                        throw EOFException()
+
+                    if (split.first() == "file") {
+                        list.add(MpdSong(file, map))
+                        map = mutableMapOf()
+                        file = split.last()
+                        continue
+                    }
+
+                    if (split.first() == "Time" || split.first() == "Range" || split.first() == "Last-Modified" || split.first() == "added")
+                        continue
+
+                    val tag = MpdTag.valueOf(split.first())
+                    map[tag] = split.last()
+                }
+                MpdResponse.MpdFindResponse(list)
+            }
+
+            is MpdRequest.MpdListRequest -> {
+                val nodeStack = ArrayDeque<Pair<MpdTag, MutableList<MpdGroupNode>>>(req.groups.size)
+                val stack = ArrayDeque<String>(req.groups.size)
+                while (true) {
+                    val line = source.readUTF8Line() ?: throw EOFException()
+
+                    if (line == "OK")
+                        break
+
+                    val split = line.split(": ", limit = 2)
+                    if (split.size != 2)
+                        throw EOFException()
+
+                    val key = MpdTag.valueOf(split.first())
+                    val value = split.last()
+
+                    if (nodeStack.find { it.first == key } != null) {
+                        while (nodeStack.last().first != key) {
+                            val node = nodeStack.removeLast()
+                            val data = stack.removeLast()
+                            nodeStack.last().second.add(MpdGroupNode.Node(data, node.second))
+                        }
+                    } else {
+                        nodeStack.add(Pair(key, mutableListOf()))
+                    }
+
+                    if (nodeStack.size == req.groups.size) {
+                        nodeStack.last().second.add(MpdGroupNode.Leaf(value))
+                    } else {
+                        stack.add(value)
+                    }
+                }
+
+                MpdResponse.MpdListResponse(nodeStack.first.second)
             }
         }
     }
@@ -190,7 +240,7 @@ class MpdClient private constructor(private val addr: SocketAddress, private val
                 throw e
             }
 
-            return MpdClient(addr, tls, socket, source, sink)
+            return MpdClient(socket, source, sink)
         }
     }
 }
