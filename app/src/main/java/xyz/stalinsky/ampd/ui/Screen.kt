@@ -106,6 +106,7 @@ fun Main(viewModel: MainViewModel = hiltViewModel()) {
         force = false
     }
 
+    var innerTitle by remember { mutableStateOf("") }
     val route by navController.currentBackStackEntryAsState()
     PlayerSheetScaffold(state, Modifier, {
         Player(route?.destination?.route == "main" || route?.destination?.route == "artist/{id}" || route?.destination?.route == "album/{id}",
@@ -133,7 +134,7 @@ fun Main(viewModel: MainViewModel = hiltViewModel()) {
             "main" -> stringResource(R.string.app_name)
             "settings" -> stringResource(R.string.settings)
             "tabs" -> stringResource(R.string.tabs)
-            else -> ""
+            else -> innerTitle
         }
 
         TopAppBar({ Text(title) }, actions = {
@@ -147,25 +148,28 @@ fun Main(viewModel: MainViewModel = hiltViewModel()) {
     }) {
         NavHost(navController, "main") {
             composable("main") {
+                innerTitle = ""
                 MainScreen({ force = true }, navController)
             }
 
             composable("settings") {
+                innerTitle = ""
                 SettingsScreen(navController)
             }
 
             composable("tabs") {
+                innerTitle = ""
                 TabsSettingScreen()
             }
 
             composable("artist/{id}", listOf(navArgument("id") {type = NavType.StringType })) {
                 val id = it.arguments!!.getString("id")
-                ArtistScreen(id!!, { force = true }, navController)
+                ArtistScreen(id!!, { force = true }, { innerTitle = it }, navController)
             }
 
             composable("album/{id}", listOf(navArgument("id") { type = NavType.StringType })) {
                 val id = it.arguments!!.getString("id")
-                AlbumScreen(id!!, { force = true }, navController)
+                AlbumScreen(id!!, { force = true }, { innerTitle = it }, navController)
             }
         }
     }
@@ -480,11 +484,10 @@ fun Album(title: String, artist: String, onClick: () -> Unit, onAddToQueue: () -
 }
 
 @Composable
-fun ArtistScreen(id: String, onRetry: () -> Unit, nav: NavController, viewModel: ArtistViewModel = hiltViewModel()) {
-    var name: String? by remember { mutableStateOf(null) }
+fun ArtistScreen(id: String, onRetry: () -> Unit, setTitle: (String) -> Unit, nav: NavController, viewModel: ArtistViewModel = hiltViewModel()) {
     val songs by viewModel.songs.collectAsState()
     LaunchedEffect(id) {
-        name = viewModel.getName(id)
+        setTitle(viewModel.getName(id) ?: "")
     }
 
     ConnectionScreen(songs, onRetry) {
@@ -509,7 +512,7 @@ fun ArtistScreen(id: String, onRetry: () -> Unit, nav: NavController, viewModel:
                         }, i)
                     }
                 }, supportingContent = {
-                    SingleLineText(name ?: "")
+                    SingleLineText(song.artistId ?: "")
                 })
             }
         }
@@ -517,11 +520,10 @@ fun ArtistScreen(id: String, onRetry: () -> Unit, nav: NavController, viewModel:
 }
 
 @Composable
-fun AlbumScreen(id: String, onRetry: () -> Unit, nav: NavController, viewModel: AlbumViewModel = hiltViewModel()) {
-    var name: String? by remember { mutableStateOf(null) }
+fun AlbumScreen(id: String, onRetry: () -> Unit, setTitle: (String) -> Unit, nav: NavController, viewModel: AlbumViewModel = hiltViewModel()) {
     val tracks by viewModel.trackList.collectAsState()
     LaunchedEffect(id) {
-        name = viewModel.getName(id)
+        setTitle(viewModel.getName(id) ?: "")
     }
 
     ConnectionScreen(tracks, onRetry) {
@@ -554,7 +556,7 @@ fun AlbumScreen(id: String, onRetry: () -> Unit, nav: NavController, viewModel: 
                         }, i)
                     }
                 }, supportingContent = {
-                    SingleLineText(name ?: "")
+                    SingleLineText(track.artistId)
                 }, leadingContent = {
                     ProvideTextStyle(MaterialTheme.typography.labelMedium) {
                         SingleLineText(
