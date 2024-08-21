@@ -46,7 +46,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -95,7 +95,9 @@ fun Player(
                 val maxOffset = state.drag.anchors.positionOf(true)
                 Box(
                     Modifier
-                        .alpha((state.drag.offset - maxOffset) / -maxOffset)
+                        .graphicsLayer {
+                            this.alpha = (state.drag.offset - maxOffset) / -maxOffset
+                        }
                         .fillMaxSize()
                         .anchoredDraggable(
                             state.drag,
@@ -145,7 +147,7 @@ fun Player(
             }
 
             val transition = updateTransition(state.expand, "")
-            val alpha by transition.animateFloat(label = "") {
+            val alpha by transition.animateFloat({ tween() }, label = "") {
                 if (it)
                     1f
                 else
@@ -166,7 +168,9 @@ fun Player(
                 val maxOffset = state.drag.anchors.positionOf(true)
                 ConstraintLayout(
                     Modifier
-                        .alpha((state.drag.offset) / maxOffset - alpha)
+                        .graphicsLayer {
+                            this.alpha = (state.drag.offset) / maxOffset - alpha
+                        }
                         .fillMaxWidth()
                         .height(372.dp)
                         .anchoredDraggable(
@@ -304,7 +308,9 @@ fun Player(
 
                 ConstraintLayout(
                     Modifier
-                        .alpha(alpha)
+                        .graphicsLayer {
+                            this.alpha = alpha
+                        }
                         .fillMaxSize()
                 ) {
                     val (closeRef, queueRef) = createRefs()
