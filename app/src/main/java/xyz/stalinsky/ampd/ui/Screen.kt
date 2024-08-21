@@ -430,8 +430,14 @@ fun Artist(name: String, onClick: () -> Unit, onAddToQueue: () -> Unit, onPlayNe
         }
 
         DropdownMenu(expanded, { expanded = false }) {
-            DropdownMenuItem({ Text(stringResource(R.string.add_to_queue)) }, { onAddToQueue() })
-            DropdownMenuItem({ Text(stringResource(R.string.play_next)) }, { onPlayNext() })
+            DropdownMenuItem({ Text(stringResource(R.string.add_to_queue)) }, {
+                expanded = false
+                onAddToQueue()
+            })
+            DropdownMenuItem({ Text(stringResource(R.string.play_next)) }, {
+                expanded = false
+                onPlayNext()
+            })
         }
     })
 }
