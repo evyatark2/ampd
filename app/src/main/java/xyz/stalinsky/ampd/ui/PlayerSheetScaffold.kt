@@ -6,25 +6,25 @@ import androidx.compose.animation.core.tween
 import androidx.compose.animation.core.updateTransition
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.offset
-import androidx.compose.foundation.layout.padding
-import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.layout.SubcomposeLayout
+import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import kotlin.math.roundToInt
 
-class PlayerSheetScaffoldState @OptIn(ExperimentalFoundationApi::class) constructor(
+class PlayerSheetScaffoldState(
     val playerState: PlayerState,
     val snackbarHostState: SnackbarHostState,
-) {
-}
+)
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
@@ -37,52 +37,35 @@ fun PlayerSheetScaffold(state: PlayerSheetScaffoldState, modifier: Modifier = Mo
             0.dp
     }
 
-    Scaffold { padding ->
+    Surface(Modifier) {
         SubcomposeLayout(Modifier) { c ->
-            val measurables = subcompose(1) {
-                Box {
+            val placeable = subcompose(1) {
+                Column(Modifier.fillMaxSize()) {
                     topBarContent()
-                }
-                Box(
-                    Modifier
-                        .fillMaxSize()
-                        .padding(padding)
-                ) {
                     content()
                 }
-            }
+            }.first().measure(Constraints(0, c.maxWidth, 0, c.maxHeight - showOffset.toPx().toInt()))
 
-            val topBar = measurables[0]
-            val content = measurables[1]
-            //val sheet = measurables[2]
-
-            val topBarPlaceable = topBar.measure(c)
-            val placeable = content.measure(
-                c.copy(
-                    maxHeight = c.maxHeight - topBarPlaceable.height - showOffset.toPx()
-                        .roundToInt()
-                )
-            )
-
-            val sheet = subcompose(2) {
+            val sheetPlaceable = subcompose(2) {
                 val transition = updateTransition(state.playerState.expand, "")
                 val offset by transition.animateIntOffset({ tween() }, "") {
                     if (it)
                         IntOffset(0, 0)
                     else
-                        IntOffset(0, topBarPlaceable.height + placeable.height + state.playerState.drag.offset.roundToInt())
+                        IntOffset(
+                            0,
+                            placeable.height + state.playerState.drag.offset.roundToInt()
+                        )
                 }
 
                 Box(Modifier.offset { offset }) {
                     sheetContent()
                 }
-            }.first()
-            val sheetPlaceable = sheet.measure(c)
+            }.first().measure(c)
 
             layout(c.maxWidth, c.maxHeight) {
-                topBarPlaceable.placeRelative(0, 0)
-                placeable.placeRelative(0, topBarPlaceable.height)
-                sheetPlaceable.placeRelative( 0, 0)
+                placeable.placeRelative(0, 0)
+                sheetPlaceable.placeRelative(0, 0)
             }
         }
     }

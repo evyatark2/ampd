@@ -146,7 +146,7 @@ fun Main(viewModel: MainViewModel = hiltViewModel()) {
             }
         })
     }) {
-        NavHost(navController, "main") {
+        NavHost(navController, "main", Modifier.fillMaxSize()) {
             composable("main") {
                 innerTitle = ""
                 MainScreen({ force = true }, navController)
