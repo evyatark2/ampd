@@ -8,8 +8,6 @@ import androidx.media3.common.MediaMetadata
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.flow.map
-import kotlinx.coroutines.flow.mapLatest
 import kotlinx.coroutines.flow.mapNotNull
 import kotlinx.coroutines.flow.stateIn
 import xyz.stalinsky.ampd.data.ArtistsRepository
@@ -19,10 +17,11 @@ import xyz.stalinsky.ampd.ui.MpdConnectionState
 import javax.inject.Inject
 
 @HiltViewModel
-class ArtistsViewModel @Inject constructor(repo: ArtistsRepository, private val tracks: TracksRepository, private val player: PlayerRepository) : ViewModel() {
-    val artists =
-        repo.getAllArtists()
-            .mapNotNull {
+class ArtistsViewModel @Inject constructor(
+        repo: ArtistsRepository,
+        private val tracks: TracksRepository,
+        private val player: PlayerRepository) : ViewModel() {
+    val artists = repo.getAllArtists().mapNotNull {
                 it?.map {
                     MpdConnectionState.Ok(it)
                 }?.getOrElse { MpdConnectionState.Error(it) } ?: MpdConnectionState.Loading()
@@ -30,35 +29,23 @@ class ArtistsViewModel @Inject constructor(repo: ArtistsRepository, private val 
 
     suspend fun addToQueue(id: String) {
         val songs = tracks.getSongsForArtist(id).first()
-        player.addToQueue(songs?.getOrElse { listOf() }
-            ?.map {
-                val metadata = MediaMetadata.Builder()
-                    .setTitle(it.title)
-                    .setArtist(it.artistId)
-                    .setAlbumTitle(it.albumId)
-                    .build()
-                MediaItem.Builder()
-                    .setMediaId(it.id)
-                    .setMediaMetadata(metadata)
-                    .setUri(Uri.parse(""))
-                    .build()
-            } ?: listOf())
+        player.addToQueue(songs?.getOrElse { listOf() }?.map {
+                    val metadata =
+                            MediaMetadata.Builder().setTitle(it.title).setArtist(it.artistId).setAlbumTitle(it.albumId)
+                                    .build()
+                    MediaItem.Builder().setMediaId(it.id).setMediaMetadata(metadata)
+                            .setUri(Uri.parse("")).build()
+                } ?: listOf())
     }
 
     suspend fun playNext(id: String) {
         val songs = tracks.getSongsForArtist(id).first()
-        player.playNext(songs?.getOrElse { listOf() }
-            ?.map {
-                val metadata = MediaMetadata.Builder()
-                    .setTitle(it.title)
-                    .setArtist(it.artistId)
-                    .setAlbumTitle(it.albumId)
-                    .build()
-                MediaItem.Builder()
-                    .setMediaId(it.id)
-                    .setMediaMetadata(metadata)
-                    .setUri(Uri.parse(""))
-                    .build()
-            } ?: listOf())
+        player.playNext(songs?.getOrElse { listOf() }?.map {
+                    val metadata =
+                            MediaMetadata.Builder().setTitle(it.title).setArtist(it.artistId).setAlbumTitle(it.albumId)
+                                    .build()
+                    MediaItem.Builder().setMediaId(it.id).setMediaMetadata(metadata)
+                            .setUri(Uri.parse("")).build()
+                } ?: listOf())
     }
 }

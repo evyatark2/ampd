@@ -15,14 +15,18 @@ import xyz.stalinsky.ampd.ui.MpdConnectionState
 import javax.inject.Inject
 
 @HiltViewModel
-class ArtistViewModel @Inject constructor(handle: SavedStateHandle, tracks: TracksRepository, private val artists: ArtistsRepository, private val player: PlayerRepository) : ViewModel() {
+class ArtistViewModel @Inject constructor(
+        handle: SavedStateHandle,
+        tracks: TracksRepository,
+        private val artists: ArtistsRepository,
+        private val player: PlayerRepository) : ViewModel() {
     val id = handle.get<String>(ARTIST_ID_SAVED_STATE_KEY)!!
     val songs = tracks.getSongsForArtist(id).map {
-        it?.map { MpdConnectionState.Ok(it) }?.getOrElse { MpdConnectionState.Error(it) } ?: MpdConnectionState.Loading()
+        it?.map { MpdConnectionState.Ok(it) }?.getOrElse { MpdConnectionState.Error(it) }
+                ?: MpdConnectionState.Loading()
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), MpdConnectionState.Loading())
 
-    suspend fun getName(id: String) =
-        artists.getArtistById(id)?.name
+    suspend fun getName(id: String) = artists.getArtistById(id)?.name
 
     fun setQueue(items: List<MediaItem>, i: Int) {
         player.setQueue(items, i)

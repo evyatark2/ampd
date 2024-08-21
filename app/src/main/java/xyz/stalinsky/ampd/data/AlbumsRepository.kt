@@ -5,9 +5,8 @@ import xyz.stalinsky.ampd.model.Album
 import javax.inject.Inject
 
 class AlbumsRepository @Inject constructor(private val mpd: MpdRemoteDataSource) {
-    fun getAllAlbums() =
-        mpd.fetchAlbums()
+    fun getAllAlbums() = mpd.fetchAlbums()
 
     suspend fun getAlbumById(id: String) =
-        mpd.fetchAlbumTitleById(id)?.let { Album(id, it, mpd.fetchAlbumArtistId(id) ?: "") }
+            mpd.fetchAlbumTitleById(id)?.let { Album(id, it, mpd.fetchAlbumArtistId(id) ?: "") }
 }

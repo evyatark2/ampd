@@ -25,10 +25,8 @@ import javax.inject.Singleton
 private const val SETTINGS_NAME = "settings"
 private const val DATA_STORE_FILE_NAME = "settings.pb"
 
-val Context.settingsStore: DataStore<Settings> by dataStore(
-    fileName = DATA_STORE_FILE_NAME,
-    serializer = SettingsSerializer
-)
+val Context.settingsStore: DataStore<Settings> by dataStore(fileName = DATA_STORE_FILE_NAME,
+        serializer = SettingsSerializer)
 
 @InstallIn(SingletonComponent::class)
 @Module
@@ -36,9 +34,9 @@ object DataStoreModule {
     @Singleton
     @Provides
     fun providePreferencesDataStore(@ApplicationContext context: Context) =
-        DataStoreFactory.create(SettingsSerializer) {
-            context.dataStoreFile(DATA_STORE_FILE_NAME)
-        }
+            DataStoreFactory.create(SettingsSerializer) {
+                context.dataStoreFile(DATA_STORE_FILE_NAME)
+            }
 }
 
 object SettingsSerializer : Serializer<Settings> {
@@ -46,8 +44,7 @@ object SettingsSerializer : Serializer<Settings> {
         tabs.addAll(listOf(SettingsKt.tab {
             enabled = true
             type = Settings.TabType.TAB_TYPE_ARTISTS
-        },
-        SettingsKt.tab {
+        }, SettingsKt.tab {
             enabled = true
             type = Settings.TabType.TAB_TYPE_ALBUMS
         }))
@@ -61,8 +58,7 @@ object SettingsSerializer : Serializer<Settings> {
         }
     }
 
-    override suspend fun writeTo(t: Settings, output: OutputStream) =
-        t.writeTo(output)
+    override suspend fun writeTo(t: Settings, output: OutputStream) = t.writeTo(output)
 }
 
 @Singleton
@@ -98,7 +94,7 @@ class SettingsRepository @Inject constructor(private val settingsStore: DataStor
         it.mpdHost
     }
 
-    val mpdPort =  settingsStore.data.map {
+    val mpdPort = settingsStore.data.map {
         it.mpdPort
     }
 

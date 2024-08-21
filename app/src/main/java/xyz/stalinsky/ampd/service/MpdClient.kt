@@ -16,59 +16,13 @@ import java.io.EOFException
 import java.util.ArrayDeque
 
 enum class MpdTag {
-    Artist,
-    ArtistSort,
-    Album,
-    AlbumSort,
-    AlbumArtist,
-    AlbumArtistSort,
-    Title,
-    TitleSort,
-    Track,
-    Name,
-    Genre,
-    Mood,
-    Date,
-    OriginalDate,
-    Composer,
-    ComposerSort,
-    Performer,
-    Conductor,
-    Work,
-    Ensemble,
-    Movement,
-    MovementNumber,
-    ShowMovement,
-    Location,
-    Grouping,
-    Comment,
-    Disc,
-    Label,
-    MUSICBRAINZ_ARTISTID,
-    MUSICBRAINZ_ALBUMID,
-    MUSICBRAINZ_ALBUMARTISTID,
-    MUSICBRAINZ_TRACKID,
-    MUSICBRAINZ_RELEASEGROUPID,
-    MUSICBRAINZ_RELEASETRACKID,
-    MUSICBRAINZ_WORKID,
-    duration,
-    Format;
+    Artist, ArtistSort, Album, AlbumSort, AlbumArtist, AlbumArtistSort, Title, TitleSort, Track, Name, Genre, Mood, Date, OriginalDate, Composer, ComposerSort, Performer, Conductor, Work, Ensemble, Movement, MovementNumber, ShowMovement, Location, Grouping, Comment, Disc, Label, MUSICBRAINZ_ARTISTID, MUSICBRAINZ_ALBUMID, MUSICBRAINZ_ALBUMARTISTID, MUSICBRAINZ_TRACKID, MUSICBRAINZ_RELEASEGROUPID, MUSICBRAINZ_RELEASETRACKID, MUSICBRAINZ_WORKID, duration, Format;
 }
 
 enum class MpdErrCode(val value: Int) {
-    NOT_LIST(1),
-    ARG(2),
-    PASSWORD(3),
-    PERMISSION(4),
-    UNKNOWN(5),
+    NOT_LIST(1), ARG(2), PASSWORD(3), PERMISSION(4), UNKNOWN(5),
 
-    NO_EXIST(50),
-    PLAYLIST_MAX(51),
-    SYSTEM(52),
-    PLAYLIST_LOAD(53),
-    UPDATE_ALREADY(53),
-    PLAYER_SYNC(55),
-    EXIST(56),
+    NO_EXIST(50), PLAYLIST_MAX(51), SYSTEM(52), PLAYLIST_LOAD(53), UPDATE_ALREADY(53), PLAYER_SYNC(55), EXIST(56),
 }
 
 sealed interface MpdGroupNode {
@@ -77,8 +31,7 @@ sealed interface MpdGroupNode {
 }
 
 data class MpdSong(
-    val file: String,
-    val tags: Map<MpdTag, String>)
+        val file: String, val tags: Map<MpdTag, String>)
 
 sealed interface MpdResponse {
     class MpdListResponse(val data: List<MpdGroupNode>) : MpdResponse
@@ -90,13 +43,11 @@ sealed interface MpdResponse {
 sealed interface MpdFilter {
 
     class Equal(private val tag: MpdTag, private val value: String) : MpdFilter {
-        override fun toString() =
-            "($tag == \\\"${value.replace("\"", "\\\\\\\"")}\\\")"
+        override fun toString() = "($tag == \\\"${value.replace("\"", "\\\\\\\"")}\\\")"
     }
 
     class And(private val fst: MpdFilter, private val snd: MpdFilter) : MpdFilter {
-        override fun toString() =
-            "($fst AND $snd)"
+        override fun toString() = "($fst AND $snd)"
     }
 }
 
@@ -106,19 +57,23 @@ sealed interface MpdRequest {
             addAll(groups_)
             add(type)
         }
-        override fun toString() =
-            "list $type${if (filter != null) " \"$filter\"" else ""}${groups_.joinToString("") {
+
+        override fun toString() = "list $type${if (filter != null) " \"$filter\"" else ""}${
+            groups_.joinToString("") {
                 " group $it"
-            }}\n"
+            }
+        }\n"
     }
 
     data class MpdFindRequest(private val filter: MpdFilter, private val sort: MpdTag?) : MpdRequest {
-        override fun toString() =
-            "find \"$filter\"${if (sort != null) " sort $sort" else ""}\n"
+        override fun toString() = "find \"$filter\"${if (sort != null) " sort $sort" else ""}\n"
     }
 }
 
-class MpdClient private constructor(private val socket: Socket, private var source: ByteReadChannel, private var sink: ByteWriteChannel) {
+class MpdClient private constructor(
+        private val socket: Socket,
+        private var source: ByteReadChannel,
+        private var sink: ByteWriteChannel) {
 
     suspend fun request(req: MpdRequest): MpdResponse {
         sink.writeStringUtf8(req.toString())
@@ -132,8 +87,7 @@ class MpdClient private constructor(private val socket: Socket, private var sour
                     return MpdResponse.MpdFindResponse(listOf())
                 } else {
                     val split = line.split(": ", limit = 2)
-                    if (split.size != 2 || split.first() != "file")
-                        throw EOFException()
+                    if (split.size != 2 || split.first() != "file") throw EOFException()
 
                     file = split.last()
                 }
@@ -143,12 +97,10 @@ class MpdClient private constructor(private val socket: Socket, private var sour
                 while (true) {
                     val line = source.readUTF8Line() ?: throw EOFException()
 
-                    if (line == "OK")
-                        break
+                    if (line == "OK") break
 
                     val split = line.split(": ", limit = 2)
-                    if (split.size != 2)
-                        throw EOFException()
+                    if (split.size != 2) throw EOFException()
 
                     if (split.first() == "file") {
                         list.add(MpdSong(file, map))
@@ -157,8 +109,7 @@ class MpdClient private constructor(private val socket: Socket, private var sour
                         continue
                     }
 
-                    if (split.first() == "Time" || split.first() == "Range" || split.first() == "Last-Modified" || split.first() == "added")
-                        continue
+                    if (split.first() == "Time" || split.first() == "Range" || split.first() == "Last-Modified" || split.first() == "added") continue
 
                     val tag = MpdTag.valueOf(split.first())
                     map[tag] = split.last()
@@ -172,12 +123,10 @@ class MpdClient private constructor(private val socket: Socket, private var sour
                 while (true) {
                     val line = source.readUTF8Line() ?: throw EOFException()
 
-                    if (line == "OK")
-                        break
+                    if (line == "OK") break
 
                     val split = line.split(": ", limit = 2)
-                    if (split.size != 2)
-                        throw EOFException()
+                    if (split.size != 2) throw EOFException()
 
                     val key = MpdTag.valueOf(split.first())
                     val value = split.last()
@@ -220,8 +169,7 @@ class MpdClient private constructor(private val socket: Socket, private var sour
             return socket
         }
 
-        private suspend fun init(read: ByteReadChannel, write: ByteWriteChannel) {
-            // Initial OK MPD
+        private suspend fun init(read: ByteReadChannel, write: ByteWriteChannel) { // Initial OK MPD
             read.readUTF8Line() ?: throw IllegalStateException()
 
             write.writeStringUtf8("password mypass\n")

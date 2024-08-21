@@ -63,16 +63,16 @@ import io.ktor.network.sockets.InetSocketAddress
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import xyz.stalinsky.ampd.R
 import xyz.stalinsky.ampd.Settings
 import xyz.stalinsky.ampd.model.Album
 import xyz.stalinsky.ampd.model.Artist
-import xyz.stalinsky.ampd.ui.viewmodel.AlbumsViewModel
-import xyz.stalinsky.ampd.ui.viewmodel.ArtistViewModel
-import xyz.stalinsky.ampd.ui.viewmodel.MainViewModel
-import xyz.stalinsky.ampd.ui.viewmodel.ArtistsViewModel
-import xyz.stalinsky.ampd.R
 import xyz.stalinsky.ampd.ui.utils.SingleLineText
 import xyz.stalinsky.ampd.ui.viewmodel.AlbumViewModel
+import xyz.stalinsky.ampd.ui.viewmodel.AlbumsViewModel
+import xyz.stalinsky.ampd.ui.viewmodel.ArtistViewModel
+import xyz.stalinsky.ampd.ui.viewmodel.ArtistsViewModel
+import xyz.stalinsky.ampd.ui.viewmodel.MainViewModel
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -110,35 +110,44 @@ fun Main(viewModel: MainViewModel = hiltViewModel()) {
     val route by navController.currentBackStackEntryAsState()
     PlayerSheetScaffold(state, Modifier, {
         Player(route?.destination?.route == "main" || route?.destination?.route == "artist/{id}" || route?.destination?.route == "album/{id}",
-            state.playerState,
-            loading,
-            playing,
-            if (currentItem != -1) { queue?.run { Pair(this, currentItem) } } else null,
-            {
-                viewModel.progress()
-            }, duration, {
-                viewModel.play()
-            }, {
-                viewModel.pause()
-            }, {
-                viewModel.seek(it)
-            }, {
-                viewModel.next()
-            }, {
-                viewModel.prev()
-            }, {
-                viewModel.skipTo(it)
-            })
+                state.playerState,
+                loading,
+                playing,
+                if (currentItem != -1) {
+                    queue?.run { Pair(this, currentItem) }
+                } else null,
+                {
+                    viewModel.progress()
+                },
+                duration,
+                {
+                    viewModel.play()
+                },
+                {
+                    viewModel.pause()
+                },
+                {
+                    viewModel.seek(it)
+                },
+                {
+                    viewModel.next()
+                },
+                {
+                    viewModel.prev()
+                },
+                {
+                    viewModel.skipTo(it)
+                })
     }, {
         val title = when (route?.destination?.route) {
-            "main" -> stringResource(R.string.app_name)
+            "main"     -> stringResource(R.string.app_name)
             "settings" -> stringResource(R.string.settings)
-            "tabs" -> stringResource(R.string.tabs)
-            else -> innerTitle
+            "tabs"     -> stringResource(R.string.tabs)
+            else       -> innerTitle
         }
 
         TopAppBar({ Text(title) }, actions = {
-            IconButton(onClick = {  }) {
+            IconButton(onClick = { }) {
                 Icon(Icons.Default.Search, "")
             }
             IconButton(onClick = { navController.navigate("settings") }) {
@@ -162,7 +171,7 @@ fun Main(viewModel: MainViewModel = hiltViewModel()) {
                 TabsSettingScreen()
             }
 
-            composable("artist/{id}", listOf(navArgument("id") {type = NavType.StringType })) {
+            composable("artist/{id}", listOf(navArgument("id") { type = NavType.StringType })) {
                 val id = it.arguments!!.getString("id")
                 ArtistScreen(id!!, { force = true }, { innerTitle = it }, navController)
             }
@@ -177,11 +186,7 @@ fun Main(viewModel: MainViewModel = hiltViewModel()) {
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-fun MainScreen(
-    onRetry: () -> Unit,
-    nav: NavController,
-    viewModel: MainViewModel = hiltViewModel(),
-) {
+fun MainScreen(onRetry: () -> Unit, nav: NavController, viewModel: MainViewModel = hiltViewModel()) {
     val tabs by viewModel.tabs.collectAsState()
     val defaultTab by viewModel.defaultTab.collectAsState()
 
@@ -198,48 +203,32 @@ fun MainScreen(
             tabs.forEachIndexed { i, tab ->
                 if (tab.enabled) {
                     when (tab.type) {
-                        Settings.TabType.TAB_TYPE_ARTISTS ->
-                            Tab(
-                                selected = i == pagerState.currentPage,
-                                onClick = {
-                                    scope.launch {
-                                        pagerState.animateScrollToPage(i)
-                                    }
-                                },
-                                text = { Text(stringResource(R.string.artists)) })
+                        Settings.TabType.TAB_TYPE_ARTISTS -> Tab(selected = i == pagerState.currentPage, onClick = {
+                            scope.launch {
+                                pagerState.animateScrollToPage(i)
+                            }
+                        }, text = { Text(stringResource(R.string.artists)) })
 
-                        Settings.TabType.TAB_TYPE_ALBUMS ->
-                            Tab(
-                                selected = i == pagerState.currentPage,
-                                onClick = {
-                                    scope.launch {
-                                        pagerState.animateScrollToPage(i)
-                                    }
-                                },
-                                text = { Text(stringResource(R.string.albums)) })
+                        Settings.TabType.TAB_TYPE_ALBUMS  -> Tab(selected = i == pagerState.currentPage, onClick = {
+                            scope.launch {
+                                pagerState.animateScrollToPage(i)
+                            }
+                        }, text = { Text(stringResource(R.string.albums)) })
 
-                        Settings.TabType.TAB_TYPE_SONGS ->
-                            Tab(
-                                selected = i == pagerState.currentPage,
-                                onClick = {
-                                    scope.launch {
-                                        pagerState.animateScrollToPage(i)
-                                    }
-                                },
-                                text = { Text(stringResource(R.string.songs)) })
+                        Settings.TabType.TAB_TYPE_SONGS   -> Tab(selected = i == pagerState.currentPage, onClick = {
+                            scope.launch {
+                                pagerState.animateScrollToPage(i)
+                            }
+                        }, text = { Text(stringResource(R.string.songs)) })
 
-                        Settings.TabType.TAB_TYPE_GENRES ->
-                            Tab(
-                                selected = i == pagerState.currentPage,
-                                onClick = {
-                                    scope.launch {
-                                        pagerState.animateScrollToPage(i)
-                                    }
-                                },
-                                text = { Text(stringResource(R.string.genres)) })
+                        Settings.TabType.TAB_TYPE_GENRES  -> Tab(selected = i == pagerState.currentPage, onClick = {
+                            scope.launch {
+                                pagerState.animateScrollToPage(i)
+                            }
+                        }, text = { Text(stringResource(R.string.genres)) })
 
-                        Settings.TabType.UNRECOGNIZED -> TODO()
-                        null -> TODO()
+                        Settings.TabType.UNRECOGNIZED     -> TODO()
+                        null                              -> TODO()
                     }
                 }
             }
@@ -255,16 +244,16 @@ fun MainScreen(
                         })
                     }
 
-                    Settings.TabType.TAB_TYPE_ALBUMS -> {
+                    Settings.TabType.TAB_TYPE_ALBUMS  -> {
                         AlbumsScreen(onRetry, {
                             nav.navigate("album/${it}")
                         })
                     }
 
-                    Settings.TabType.TAB_TYPE_SONGS -> TODO()
-                    Settings.TabType.TAB_TYPE_GENRES -> TODO()
-                    Settings.TabType.UNRECOGNIZED -> TODO()
-                    null -> TODO()
+                    Settings.TabType.TAB_TYPE_SONGS   -> TODO()
+                    Settings.TabType.TAB_TYPE_GENRES  -> TODO()
+                    Settings.TabType.UNRECOGNIZED     -> TODO()
+                    null                              -> TODO()
                 }
             }
         }
@@ -272,10 +261,7 @@ fun MainScreen(
 }
 
 enum class Dialog {
-    LIBRARY_HOST_DIALOG,
-    LIBRARY_PORT_DIALOG,
-    MPD_HOST_DIALOG,
-    MPD_PORT_DIALOG
+    LIBRARY_HOST_DIALOG, LIBRARY_PORT_DIALOG, MPD_HOST_DIALOG, MPD_PORT_DIALOG
 }
 
 @Composable
@@ -292,12 +278,13 @@ fun SettingsScreen(nav: NavController, viewModel: SettingsViewModel = hiltViewMo
         val mpdPort by viewModel.mpdPort.collectAsState()
 
         if (showDialog) {
-            var value by remember { mutableStateOf(when (dialog) {
-                Dialog.LIBRARY_HOST_DIALOG -> libraryHost
-                Dialog.LIBRARY_PORT_DIALOG -> libraryPort.toString()
-                Dialog.MPD_HOST_DIALOG -> mpdHost
-                Dialog.MPD_PORT_DIALOG -> mpdPort.toString()
-            })
+            var value by remember {
+                mutableStateOf(when (dialog) {
+                    Dialog.LIBRARY_HOST_DIALOG -> libraryHost
+                    Dialog.LIBRARY_PORT_DIALOG -> libraryPort.toString()
+                    Dialog.MPD_HOST_DIALOG     -> mpdHost
+                    Dialog.MPD_PORT_DIALOG     -> mpdPort.toString()
+                })
             }
 
             Dialog(onDismissRequest = {
@@ -305,8 +292,8 @@ fun SettingsScreen(nav: NavController, viewModel: SettingsViewModel = hiltViewMo
                     when (dialog) {
                         Dialog.LIBRARY_HOST_DIALOG -> viewModel.setLibraryHost(value)
                         Dialog.LIBRARY_PORT_DIALOG -> viewModel.setLibraryPort(value.toInt())
-                        Dialog.MPD_HOST_DIALOG -> viewModel.setMpdHost(value)
-                        Dialog.MPD_PORT_DIALOG -> viewModel.setMpdPort(value.toInt())
+                        Dialog.MPD_HOST_DIALOG     -> viewModel.setMpdHost(value)
+                        Dialog.MPD_PORT_DIALOG     -> viewModel.setMpdPort(value.toInt())
                     }
                     showDialog = false
                 }
@@ -358,14 +345,13 @@ fun TabsSettingScreen(viewModel: TabsSettingViewModel = hiltViewModel()) {
         val tabs by viewModel.tabs.collectAsState()
         val defaultTab by viewModel.defaultTab.collectAsState()
         tabs.forEachIndexed { i, tab ->
-            ListItem({ Text(tab.type.name) }, leadingContent = { Checkbox(
-                checked = tab.enabled,
-                onCheckedChange = {
+            ListItem({ Text(tab.type.name) }, leadingContent = {
+                Checkbox(checked = tab.enabled, onCheckedChange = {
                     scope.launch {
                         viewModel.toggleTab(i)
                     }
-                }
-            ) }, trailingContent = {
+                })
+            }, trailingContent = {
                 RadioButton(selected = i == defaultTab, onClick = {
                     scope.launch {
                         viewModel.setDefaultTab(i)
@@ -398,10 +384,7 @@ fun ArtistsScreen(onRetry: () -> Unit, onClick: (String) -> Unit, viewModel: Art
 }
 
 @Composable
-fun Artists(artists: List<Artist>,
-            onClick: (Int) -> Unit,
-            onAddToQueue: (Int) -> Unit,
-            onPlayNext: (Int) -> Unit) {
+fun Artists(artists: List<Artist>, onClick: (Int) -> Unit, onAddToQueue: (Int) -> Unit, onPlayNext: (Int) -> Unit) {
     LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(0.dp, 8.dp)) {
         itemsIndexed(artists) { i, artist ->
             Artist(artist.name, {
@@ -490,7 +473,12 @@ fun Album(title: String, artist: String, onClick: () -> Unit, onAddToQueue: () -
 }
 
 @Composable
-fun ArtistScreen(id: String, onRetry: () -> Unit, setTitle: (String) -> Unit, nav: NavController, viewModel: ArtistViewModel = hiltViewModel()) {
+fun ArtistScreen(
+        id: String,
+        onRetry: () -> Unit,
+        setTitle: (String) -> Unit,
+        nav: NavController,
+        viewModel: ArtistViewModel = hiltViewModel()) {
     val songs by viewModel.songs.collectAsState()
     LaunchedEffect(id) {
         setTitle(viewModel.getName(id) ?: "")
@@ -505,20 +493,14 @@ fun ArtistScreen(id: String, onRetry: () -> Unit, setTitle: (String) -> Unit, na
                 }, Modifier.clickable {
                     scope.launch {
                         viewModel.setQueue(it.map {
-                            val metadata = MediaMetadata.Builder()
-                                .setTitle(it.title)
-                                .setArtist(it.artistId)
-                                .setAlbumTitle(it.albumId)
-                                .build()
-                            MediaItem.Builder()
-                                .setMediaId(it.id)
-                                .setMediaMetadata(metadata)
-                                .setUri(Uri.parse(""))
-                                .build()
+                            val metadata = MediaMetadata.Builder().setTitle(it.title).setArtist(it.artistId)
+                                    .setAlbumTitle(it.albumId).build()
+                            MediaItem.Builder().setMediaId(it.id).setMediaMetadata(metadata)
+                                    .setUri(Uri.parse("")).build()
                         }, i)
                     }
                 }, supportingContent = {
-                    SingleLineText(song.artistId ?: "")
+                    SingleLineText(song.artistId)
                 })
             }
         }
@@ -526,7 +508,12 @@ fun ArtistScreen(id: String, onRetry: () -> Unit, setTitle: (String) -> Unit, na
 }
 
 @Composable
-fun AlbumScreen(id: String, onRetry: () -> Unit, setTitle: (String) -> Unit, nav: NavController, viewModel: AlbumViewModel = hiltViewModel()) {
+fun AlbumScreen(
+        id: String,
+        onRetry: () -> Unit,
+        setTitle: (String) -> Unit,
+        nav: NavController,
+        viewModel: AlbumViewModel = hiltViewModel()) {
     val tracks by viewModel.trackList.collectAsState()
     LaunchedEffect(id) {
         setTitle(viewModel.getName(id) ?: "")
@@ -549,25 +536,17 @@ fun AlbumScreen(id: String, onRetry: () -> Unit, setTitle: (String) -> Unit, nav
                 }, Modifier.clickable {
                     scope.launch {
                         viewModel.setQueue(it.map {
-                            val metadata = MediaMetadata.Builder()
-                                .setTitle(it.title)
-                                .setArtist(it.artistId)
-                                .setAlbumTitle(it.albumId)
-                                .build()
-                            MediaItem.Builder()
-                                .setMediaId(it.id)
-                                .setMediaMetadata(metadata)
-                                .setUri(Uri.parse(""))
-                                .build()
+                            val metadata = MediaMetadata.Builder().setTitle(it.title).setArtist(it.artistId)
+                                    .setAlbumTitle(it.albumId).build()
+                            MediaItem.Builder().setMediaId(it.id).setMediaMetadata(metadata)
+                                    .setUri(Uri.parse("")).build()
                         }, i)
                     }
                 }, supportingContent = {
                     SingleLineText(track.artistId)
                 }, leadingContent = {
                     ProvideTextStyle(MaterialTheme.typography.labelMedium) {
-                        SingleLineText(
-                            "${if (multiside) "${track.side}-" else ""}${track.track}"
-                        )
+                        SingleLineText("${if (multiside) "${track.side}-" else ""}${track.track}")
                     }
                 })
             }
@@ -578,7 +557,7 @@ fun AlbumScreen(id: String, onRetry: () -> Unit, setTitle: (String) -> Unit, nav
 @Composable
 fun <T> ConnectionScreen(state: MpdConnectionState<T>, onRetry: () -> Unit, content: @Composable (T) -> Unit) {
     when (state) {
-        is MpdConnectionState.Error -> {
+        is MpdConnectionState.Error   -> {
             Box(Modifier.fillMaxSize()) {
                 Column(Modifier.align(Alignment.Center)) {
                     Text(state.err.message ?: "", Modifier.align(Alignment.CenterHorizontally))
@@ -590,12 +569,14 @@ fun <T> ConnectionScreen(state: MpdConnectionState<T>, onRetry: () -> Unit, cont
                 }
             }
         }
+
         is MpdConnectionState.Loading -> {
             Box(Modifier.fillMaxSize()) {
                 CircularProgressIndicator(Modifier.align(Alignment.Center))
             }
         }
-        is MpdConnectionState.Ok -> {
+
+        is MpdConnectionState.Ok      -> {
             content(state.res)
         }
     }

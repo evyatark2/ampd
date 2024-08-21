@@ -13,7 +13,11 @@ import xyz.stalinsky.ampd.data.UiConfigRepository
 import javax.inject.Inject
 
 @HiltViewModel
-class MainViewModel @Inject constructor(private val mpd: MpdRepository, settings: SettingsRepository, config: UiConfigRepository, private val player: PlayerRepository) : ViewModel() {
+class MainViewModel @Inject constructor(
+        private val mpd: MpdRepository,
+        settings: SettingsRepository,
+        config: UiConfigRepository,
+        private val player: PlayerRepository) : ViewModel() {
     val tabs = config.tabs.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), listOf())
     val defaultTab = config.defaultTab.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0)
 

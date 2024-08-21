@@ -17,7 +17,10 @@ import xyz.stalinsky.ampd.ui.MpdConnectionState
 import javax.inject.Inject
 
 @HiltViewModel
-class AlbumsViewModel @Inject constructor(repo: AlbumsRepository, private val tracks: TracksRepository, private val player: PlayerRepository) : ViewModel() {
+class AlbumsViewModel @Inject constructor(
+        repo: AlbumsRepository,
+        private val tracks: TracksRepository,
+        private val player: PlayerRepository) : ViewModel() {
     val albums = repo.getAllAlbums().map {
         it?.map {
             MpdConnectionState.Ok(it)
@@ -31,33 +34,21 @@ class AlbumsViewModel @Inject constructor(repo: AlbumsRepository, private val tr
         player.addToQueue(songs?.getOrElse {
             listOf()
         }?.map {
-            val metadata = MediaMetadata.Builder()
-                .setTitle(it.title)
-                .setArtist(it.artistId)
-                .setAlbumTitle(it.albumId)
-                .build()
-            MediaItem.Builder()
-                .setMediaId(it.id)
-                .setMediaMetadata(metadata)
-                .setUri(Uri.parse(""))
-                .build()
+            val metadata =
+                    MediaMetadata.Builder().setTitle(it.title).setArtist(it.artistId).setAlbumTitle(it.albumId).build()
+            MediaItem.Builder().setMediaId(it.id).setMediaMetadata(metadata)
+                    .setUri(Uri.parse("")).build()
         } ?: listOf())
     }
 
     suspend fun playNext(id: String) {
         val songs = tracks.getTracksForAlbum(id).first()
-        player.playNext(songs?.getOrElse { listOf() }
-            ?.map {
-            val metadata = MediaMetadata.Builder()
-                .setTitle(it.title)
-                .setArtist(it.artistId)
-                .setAlbumTitle(it.albumId)
-                .build()
-            MediaItem.Builder()
-                .setMediaId(it.id)
-                .setMediaMetadata(metadata)
-                .setUri(Uri.parse(""))
-                .build()
-        } ?: listOf())
+        player.playNext(songs?.getOrElse { listOf() }?.map {
+                    val metadata =
+                            MediaMetadata.Builder().setTitle(it.title).setArtist(it.artistId).setAlbumTitle(it.albumId)
+                                    .build()
+                    MediaItem.Builder().setMediaId(it.id).setMediaMetadata(metadata)
+                            .setUri(Uri.parse("")).build()
+                } ?: listOf())
     }
 }

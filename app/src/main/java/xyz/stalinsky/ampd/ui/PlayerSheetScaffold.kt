@@ -22,19 +22,22 @@ import androidx.compose.ui.unit.dp
 import kotlin.math.roundToInt
 
 class PlayerSheetScaffoldState(
-    val playerState: PlayerState,
-    val snackbarHostState: SnackbarHostState,
+        val playerState: PlayerState,
+        val snackbarHostState: SnackbarHostState,
 )
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-fun PlayerSheetScaffold(state: PlayerSheetScaffoldState, modifier: Modifier = Modifier, sheetContent: @Composable () -> Unit, topBarContent: @Composable () -> Unit, content: @Composable () -> Unit) {
+fun PlayerSheetScaffold(
+        state: PlayerSheetScaffoldState,
+        modifier: Modifier = Modifier,
+        sheetContent: @Composable () -> Unit,
+        topBarContent: @Composable () -> Unit,
+        content: @Composable () -> Unit) {
     val showTransition = updateTransition(state.playerState.show, label = "")
     val showOffset by showTransition.animateDp({ tween() }, label = "") {
-        if (it)
-            72.dp
-        else
-            0.dp
+        if (it) 72.dp
+        else 0.dp
     }
 
     Surface(Modifier) {
@@ -49,13 +52,8 @@ fun PlayerSheetScaffold(state: PlayerSheetScaffoldState, modifier: Modifier = Mo
             val sheetPlaceable = subcompose(2) {
                 val transition = updateTransition(state.playerState.expand, "")
                 val offset by transition.animateIntOffset({ tween() }, "") {
-                    if (it)
-                        IntOffset(0, 0)
-                    else
-                        IntOffset(
-                            0,
-                            placeable.height + state.playerState.drag.offset.roundToInt()
-                        )
+                    if (it) IntOffset(0, 0)
+                    else IntOffset(0, placeable.height + state.playerState.drag.offset.roundToInt())
                 }
 
                 Box(Modifier.offset { offset }) {
@@ -76,8 +74,8 @@ fun rememberPlayerSheetScaffoldState(): PlayerSheetScaffoldState {
     val playerState = rememberPlayerState()
     return remember(playerState) {
         PlayerSheetScaffoldState(
-            playerState,
-            SnackbarHostState(),
+                playerState,
+                SnackbarHostState(),
         )
     }
 }

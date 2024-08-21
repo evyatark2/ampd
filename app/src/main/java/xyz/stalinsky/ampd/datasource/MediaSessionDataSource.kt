@@ -13,7 +13,8 @@ import xyz.stalinsky.ampd.model.PlaybackState
 import xyz.stalinsky.ampd.service.PlaybackService
 
 class MediaSessionDataSource(context: Context) {
-    private val mediaController = MediaController.Builder(context, SessionToken(context, ComponentName(context, PlaybackService::class.java)))
+    private val mediaController =
+            MediaController.Builder(context, SessionToken(context, ComponentName(context, PlaybackService::class.java)))
 
     fun playbackState(): Flow<PlaybackState> {
         return callbackFlow {

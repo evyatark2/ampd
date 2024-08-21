@@ -45,7 +45,7 @@ class PlayerRepository @Inject constructor(private val controller: MediaControll
         val listener = object : Player.Listener {
             override fun onTimelineChanged(timeline: Timeline, reason: Int) {
                 val list = mutableListOf<MediaItem>()
-                for (i in 0..< timeline.windowCount) {
+                for (i in 0..<timeline.windowCount) {
                     val win = Timeline.Window()
                     timeline.getWindow(i, win)
                     list.add(win.mediaItem)
@@ -64,8 +64,7 @@ class PlayerRepository @Inject constructor(private val controller: MediaControll
     val currentItem = callbackFlow {
         val listener = object : Player.Listener {
             override fun onPositionDiscontinuity(old: Player.PositionInfo, new: Player.PositionInfo, reason: Int) {
-                if (old.mediaItemIndex != new.mediaItemIndex)
-                    trySend(new.mediaItemIndex)
+                if (old.mediaItemIndex != new.mediaItemIndex) trySend(new.mediaItemIndex)
             }
 
             override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
