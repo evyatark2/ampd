@@ -80,8 +80,6 @@ fun Main(viewModel: MainViewModel = hiltViewModel()) {
     val state = rememberPlayerSheetScaffoldState()
     val navController = rememberNavController()
 
-    val scope = rememberCoroutineScope()
-
     val loading by viewModel.loading.collectAsState()
     val playing by viewModel.playing.collectAsState()
     val currentItem by viewModel.currentItem.collectAsState()
@@ -118,29 +116,17 @@ fun Main(viewModel: MainViewModel = hiltViewModel()) {
             {
                 viewModel.progress()
             }, duration, {
-                scope.launch {
-                    viewModel.play()
-                }
+                viewModel.play()
             }, {
-                scope.launch {
-                    viewModel.pause()
-                }
+                viewModel.pause()
             }, {
-                scope.launch {
-                    viewModel.seek(it)
-                }
+                viewModel.seek(it)
             }, {
-                scope.launch {
-                    viewModel.next()
-                }
+                viewModel.next()
             }, {
-                scope.launch {
-                    viewModel.prev()
-                }
+                viewModel.prev()
             }, {
-                scope.launch {
-                    viewModel.skipTo(it)
-                }
+                viewModel.skipTo(it)
             })
     }, {
         val title = when (route?.destination?.route) {
@@ -464,7 +450,6 @@ fun AlbumsScreen(onRetry: () -> Unit, onClick: (String) -> Unit, viewModel: Albu
                 viewModel.playNext(albums[it].id)
             }
         }
-
     }
 }
 

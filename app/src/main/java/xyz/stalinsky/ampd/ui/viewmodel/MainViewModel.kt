@@ -31,31 +31,31 @@ class MainViewModel @Inject constructor(private val mpd: MpdRepository, settings
         mpd.connect(addr, tls)
     }
 
-    suspend fun play() {
+    fun play() {
         player.play()
     }
 
-    suspend fun pause() {
+    fun pause() {
         player.pause()
     }
 
-    suspend fun seek(pos: Long) {
+    fun seek(pos: Long) {
         player.seek(pos)
     }
 
-    suspend fun next() {
+    fun next() {
         player.next()
     }
 
-    suspend fun prev() {
+    fun prev() {
         player.previous()
     }
 
-    suspend fun skipTo(i: Int) {
+    fun skipTo(i: Int) {
         player.skipTo(i)
     }
 
-    suspend fun progress(): Long {
+    fun progress(): Long {
         return player.progress()
     }
 }
