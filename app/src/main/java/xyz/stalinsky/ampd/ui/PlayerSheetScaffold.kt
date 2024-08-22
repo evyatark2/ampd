@@ -1,23 +1,17 @@
 package xyz.stalinsky.ampd.ui
 
 import androidx.compose.animation.core.animateDp
-import androidx.compose.animation.core.animateIntOffset
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.core.updateTransition
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.offset
 import androidx.compose.material3.SnackbarHostState
-import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.layout.SubcomposeLayout
-import androidx.compose.ui.unit.Constraints
-import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.unit.dp
 import kotlin.math.roundToInt
 
@@ -40,30 +34,24 @@ fun PlayerSheetScaffold(
         else 0.dp
     }
 
-    Surface(Modifier) {
-        SubcomposeLayout(Modifier) { c ->
-            val placeable = subcompose(1) {
-                Column(Modifier.fillMaxSize()) {
-                    topBarContent()
-                    content()
-                }
-            }.first().measure(Constraints(0, c.maxWidth, 0, c.maxHeight - showOffset.toPx().toInt()))
+    Layout({
+        Column {
+            topBarContent()
+            content()
+        }
+        Box {
+            sheetContent()
+        }
+    }, modifier) { measurables, c ->
+        val placeable = measurables[0].measure(c.copy(minWidth = 0, minHeight = 0, maxHeight = c.maxHeight - showOffset.toPx().toInt()))
+        val sheetPlaceable = measurables[1].measure(c.copy(minHeight = 0, minWidth = 0))
 
-            val sheetPlaceable = subcompose(2) {
-                val transition = updateTransition(state.playerState.expand, "")
-                val offset by transition.animateIntOffset({ tween() }, "") {
-                    if (it) IntOffset(0, 0)
-                    else IntOffset(0, placeable.height + state.playerState.drag.offset.roundToInt())
-                }
-
-                Box(Modifier.offset { offset }) {
-                    sheetContent()
-                }
-            }.first().measure(c)
-
-            layout(c.maxWidth, c.maxHeight) {
-                placeable.placeRelative(0, 0)
-                sheetPlaceable.placeRelative(0, 0)
+        layout(c.maxWidth, c.maxHeight) {
+            placeable.placeRelative(0, 0)
+            if (state.playerState.drag.currentValue && state.playerState.drag.targetValue) {
+                sheetPlaceable.placeRelative(0, c.maxHeight - sheetPlaceable.height)
+            } else {
+                sheetPlaceable.placeRelative(0, c.maxHeight - showOffset.toPx().toInt() + state.playerState.drag.offset.roundToInt())
             }
         }
     }
