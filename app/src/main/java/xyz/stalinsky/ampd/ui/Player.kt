@@ -63,14 +63,12 @@ import kotlin.time.Duration.Companion.milliseconds
 
 @OptIn(ExperimentalFoundationApi::class)
 class PlayerState(
-        val show: MutableTransitionState<Boolean>,
         val drag: AnchoredDraggableState<Boolean>,
         val expand: MutableState<Boolean>)
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun Player(
-        visible: Boolean,
         state: PlayerState,
         isLoading: Boolean,
         isPlaying: Boolean,
@@ -84,9 +82,6 @@ fun Player(
         onPrev: () -> Unit,
         onQueueItemClicked: (Int) -> Unit) {
     if (queue != null) {
-        state.show.targetState = visible
-
-
         Surface(Modifier.fillMaxWidth(), RoundedCornerShape(28.dp), tonalElevation = 1.dp, shadowElevation = 1.dp) {
             AnimatedContent(state.expand.value, transitionSpec = {
                 fadeIn().togetherWith(fadeOut()).using(SizeTransform { initial, target ->
@@ -330,8 +325,7 @@ fun rememberPlayerState(): PlayerState {
         false at 0f
     }
     return remember {
-        PlayerState(MutableTransitionState(false),
-                AnchoredDraggableState(false, anchors, { it / 2 }, { 0f }, tween()),
+        PlayerState(AnchoredDraggableState(false, anchors, { it / 2 }, { 0f }, tween()),
                 mutableStateOf(false))
     }
 }

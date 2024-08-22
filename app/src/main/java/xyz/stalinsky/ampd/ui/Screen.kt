@@ -108,14 +108,15 @@ fun Main(viewModel: MainViewModel = hiltViewModel()) {
 
     var innerTitle by remember { mutableStateOf("") }
     val route by navController.currentBackStackEntryAsState()
-    PlayerSheetScaffold(state, Modifier, {
-        Player(route?.destination?.route == "main" || route?.destination?.route == "artist/{id}" || route?.destination?.route == "album/{id}",
-                state.playerState,
+    PlayerSheetScaffold(state, Modifier, (route?.destination?.route == "main" || route?.destination?.route == "artist/{id}" || route?.destination?.route == "album/{id}") && queue != null, {
+        Player(state.playerState,
                 loading,
                 playing,
                 if (currentItem != -1) {
                     queue?.run { Pair(this, currentItem) }
-                } else null,
+                } else {
+                    null
+                },
                 {
                     viewModel.progress()
                 },
