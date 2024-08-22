@@ -36,6 +36,7 @@ data class MpdSong(
 sealed interface MpdResponse {
     class MpdListResponse(val data: List<MpdGroupNode>) : MpdResponse
     class MpdFindResponse(val data: List<MpdSong>) : MpdResponse
+    class MpdCommandListResponse(val data: List<MpdResponse>) : MpdResponse
 
     class MpdErrResponse(val code: MpdErrCode)
 }
@@ -68,22 +69,22 @@ sealed interface MpdRequest {
     data class MpdFindRequest(private val filter: MpdFilter, private val sort: MpdTag?) : MpdRequest {
         override fun toString() = "find \"$filter\"${if (sort != null) " sort $sort" else ""}\n"
     }
+
+    data class MpdCommandListRequest(val list: List<MpdRequest>) : MpdRequest {
+        override fun toString() = "command_list_ok_begin\n${list.joinToString("") { it.toString() }}command_list_end\n"
+    }
 }
 
 class MpdClient private constructor(
-        private val socket: Socket,
-        private var source: ByteReadChannel,
-        private var sink: ByteWriteChannel) {
+        private val socket: Socket, private var source: ByteReadChannel, private var sink: ByteWriteChannel) {
 
-    suspend fun request(req: MpdRequest): MpdResponse {
-        sink.writeStringUtf8(req.toString())
-
+    private suspend fun read_response(req: MpdRequest, end: String): MpdResponse {
         return when (req) {
             is MpdRequest.MpdFindRequest -> {
                 var file: String
 
                 val line = source.readUTF8Line() ?: throw EOFException()
-                if (line == "OK") {
+                if (line == end) {
                     return MpdResponse.MpdFindResponse(listOf())
                 } else {
                     val split = line.split(": ", limit = 2)
@@ -97,7 +98,7 @@ class MpdClient private constructor(
                 while (true) {
                     val line = source.readUTF8Line() ?: throw EOFException()
 
-                    if (line == "OK") break
+                    if (line == end) break
 
                     val split = line.split(": ", limit = 2)
                     if (split.size != 2) throw EOFException()
@@ -123,7 +124,7 @@ class MpdClient private constructor(
                 while (true) {
                     val line = source.readUTF8Line() ?: throw EOFException()
 
-                    if (line == "OK") break
+                    if (line == end) break
 
                     val split = line.split(": ", limit = 2)
                     if (split.size != 2) throw EOFException()
@@ -150,6 +151,26 @@ class MpdClient private constructor(
 
                 MpdResponse.MpdListResponse(nodeStack.first.second)
             }
+
+            else                         -> {
+                throw IllegalArgumentException()
+            }
+        }
+    }
+
+    suspend fun request(req: MpdRequest): MpdResponse {
+        sink.writeStringUtf8(req.toString())
+
+        if (req is MpdRequest.MpdCommandListRequest) {
+            val res = MpdResponse.MpdCommandListResponse(req.list.map {
+                read_response(it, "list_OK")
+            })
+            val line = source.readUTF8Line() ?: throw EOFException()
+            if (line != "OK") throw EOFException()
+
+            return res
+        } else {
+            return read_response(req, "OK")
         }
     }
 

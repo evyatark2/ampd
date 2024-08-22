@@ -251,7 +251,9 @@ class MpdRemoteDataSource @Inject constructor() {
                                 it.file,
                                 it.tags[MpdTag.Title] ?: "",
                                 it.tags[MpdTag.MUSICBRAINZ_ALBUMID] ?: "",
-                                it.tags[MpdTag.MUSICBRAINZ_ARTISTID] ?: "")
+                                it.tags[MpdTag.Album] ?: "",
+                                it.tags[MpdTag.MUSICBRAINZ_ARTISTID] ?: "",
+                                it.tags[MpdTag.Artist] ?: "")
                     }
                 })
             }
@@ -294,8 +296,15 @@ class MpdRemoteDataSource @Inject constructor() {
                     out.sortBy {
                         it.sort
                     }
-                    out.map {
-                        Album(it.id, it.title, it.artistId)
+
+                    val res = request(MpdRequest.MpdCommandListRequest(out.map {
+                        MpdRequest.MpdListRequest(MpdTag.AlbumArtist,
+                                MpdFilter.Equal(MpdTag.MUSICBRAINZ_ALBUMARTISTID, it.artistId),
+                                listOf())
+                    })) as MpdResponse.MpdCommandListResponse? ?: return@flow
+
+                    out.zip(res.data.map { (it as MpdResponse.MpdListResponse).data.first() }).map {
+                        Album(it.first.id, it.first.title, it.first.artistId, (it.second as MpdGroupNode.Leaf).data)
                     }
                 })
             }
@@ -304,20 +313,22 @@ class MpdRemoteDataSource @Inject constructor() {
         }
     }
 
-    suspend fun fetchAlbumTitleById(id: String): String? {
-        val res = request(MpdRequest.MpdListRequest(MpdTag.Album,
+    suspend fun fetchAlbumById(id: String): Album? {
+        val res = request(MpdRequest.MpdCommandListRequest(listOf(MpdRequest.MpdListRequest(MpdTag.Album,
                 MpdFilter.Equal(MpdTag.MUSICBRAINZ_ALBUMID, id),
-                listOf()))
+                listOf()),
+                MpdRequest.MpdListRequest(MpdTag.MUSICBRAINZ_ALBUMARTISTID,
+                        MpdFilter.Equal(MpdTag.MUSICBRAINZ_ALBUMID, id),
+                        listOf()),
+                MpdRequest.MpdListRequest(MpdTag.AlbumArtist,
+                        MpdFilter.Equal(MpdTag.MUSICBRAINZ_ALBUMID, id),
+                        listOf())))) as MpdResponse.MpdCommandListResponse?
 
-        return ((res as MpdResponse.MpdListResponse?)?.data?.first() as MpdGroupNode.Leaf?)?.data
-    }
+        val album = ((res?.data?.get(0) as MpdResponse.MpdListResponse?)?.data?.first() as MpdGroupNode.Leaf?)?.data
+        val artistId = ((res?.data?.get(1) as MpdResponse.MpdListResponse?)?.data?.first() as MpdGroupNode.Leaf?)?.data
+        val artist = ((res?.data?.get(2) as MpdResponse.MpdListResponse?)?.data?.first() as MpdGroupNode.Leaf?)?.data
 
-    suspend fun fetchAlbumArtistId(id: String): String? {
-        val res = request(MpdRequest.MpdListRequest(MpdTag.MUSICBRAINZ_ARTISTID,
-                MpdFilter.Equal(MpdTag.MUSICBRAINZ_ALBUMID, id),
-                listOf()))
-
-        return ((res as MpdResponse.MpdListResponse?)?.data?.first() as MpdGroupNode.Leaf?)?.data
+        return Album(id, album ?: return null, artistId ?: return null, artist ?: return null)
     }
 
     fun fetchAlbumTracks(id: String) = flow {
@@ -334,7 +345,9 @@ class MpdRemoteDataSource @Inject constructor() {
                                 it.file,
                                 it.tags[MpdTag.Title] ?: "",
                                 it.tags[MpdTag.MUSICBRAINZ_ALBUMID] ?: "",
+                                it.tags[MpdTag.Album] ?: "",
                                 it.tags[MpdTag.MUSICBRAINZ_ARTISTID] ?: "",
+                                it.tags[MpdTag.Artist] ?: "",
                                 it.tags[MpdTag.Disc]?.toInt() ?: 0,
                                 it.tags[MpdTag.Track]?.toInt() ?: 0)
                     }

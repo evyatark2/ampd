@@ -28,7 +28,7 @@ class AlbumViewModel @Inject constructor(
                 ?: MpdConnectionState.Loading()
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), MpdConnectionState.Loading())
 
-    suspend fun getName(id: String) = albums.getAlbumById(id)?.title
+    suspend fun getTitle(id: String) = albums.getAlbumById(id)?.title
 
     fun setQueue(items: List<MediaItem>, i: Int) {
         player.setQueue(items, i)

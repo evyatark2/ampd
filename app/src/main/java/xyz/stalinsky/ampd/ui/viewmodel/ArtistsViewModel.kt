@@ -22,30 +22,28 @@ class ArtistsViewModel @Inject constructor(
         private val tracks: TracksRepository,
         private val player: PlayerRepository) : ViewModel() {
     val artists = repo.getAllArtists().mapNotNull {
-                it?.map {
-                    MpdConnectionState.Ok(it)
-                }?.getOrElse { MpdConnectionState.Error(it) } ?: MpdConnectionState.Loading()
-            }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), MpdConnectionState.Loading())
+        it?.map {
+            MpdConnectionState.Ok(it)
+        }?.getOrElse { MpdConnectionState.Error(it) } ?: MpdConnectionState.Loading()
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), MpdConnectionState.Loading())
 
     suspend fun addToQueue(id: String) {
         val songs = tracks.getSongsForArtist(id).first()
         player.addToQueue(songs?.getOrElse { listOf() }?.map {
-                    val metadata =
-                            MediaMetadata.Builder().setTitle(it.title).setArtist(it.artistId).setAlbumTitle(it.albumId)
-                                    .build()
-                    MediaItem.Builder().setMediaId(it.id).setMediaMetadata(metadata)
-                            .setUri(Uri.parse("")).build()
-                } ?: listOf())
+            val metadata =
+                    MediaMetadata.Builder().setTitle(it.title).setArtist(it.artistId).setAlbumTitle(it.albumId).build()
+            MediaItem.Builder().setMediaId(it.id).setMediaMetadata(metadata)
+                    .setUri(Uri.parse("")).build()
+        } ?: listOf())
     }
 
     suspend fun playNext(id: String) {
         val songs = tracks.getSongsForArtist(id).first()
         player.playNext(songs?.getOrElse { listOf() }?.map {
-                    val metadata =
-                            MediaMetadata.Builder().setTitle(it.title).setArtist(it.artistId).setAlbumTitle(it.albumId)
-                                    .build()
-                    MediaItem.Builder().setMediaId(it.id).setMediaMetadata(metadata)
-                            .setUri(Uri.parse("")).build()
-                } ?: listOf())
+            val metadata =
+                    MediaMetadata.Builder().setTitle(it.title).setArtist(it.artistId).setAlbumTitle(it.albumId).build()
+            MediaItem.Builder().setMediaId(it.id).setMediaMetadata(metadata)
+                    .setUri(Uri.parse("")).build()
+        } ?: listOf())
     }
 }

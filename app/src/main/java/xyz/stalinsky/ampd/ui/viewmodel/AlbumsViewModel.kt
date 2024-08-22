@@ -44,11 +44,10 @@ class AlbumsViewModel @Inject constructor(
     suspend fun playNext(id: String) {
         val songs = tracks.getTracksForAlbum(id).first()
         player.playNext(songs?.getOrElse { listOf() }?.map {
-                    val metadata =
-                            MediaMetadata.Builder().setTitle(it.title).setArtist(it.artistId).setAlbumTitle(it.albumId)
-                                    .build()
-                    MediaItem.Builder().setMediaId(it.id).setMediaMetadata(metadata)
-                            .setUri(Uri.parse("")).build()
-                } ?: listOf())
+            val metadata =
+                    MediaMetadata.Builder().setTitle(it.title).setArtist(it.artistId).setAlbumTitle(it.albumId).build()
+            MediaItem.Builder().setMediaId(it.id).setMediaMetadata(metadata)
+                    .setUri(Uri.parse("")).build()
+        } ?: listOf())
     }
 }

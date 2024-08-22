@@ -1,6 +1,5 @@
 package xyz.stalinsky.ampd.ui
 
-import androidx.compose.animation.core.animateDp
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.core.updateTransition
@@ -49,14 +48,17 @@ fun PlayerSheetScaffold(
         }
     }, modifier) { measurables, c ->
         val sheetPlaceable = measurables[1].measure(c.copy(minHeight = 0, minWidth = 0))
-        val placeable = measurables[0].measure(c.copy(minWidth = 0, minHeight = 0, maxHeight = c.maxHeight - (72.dp.toPx() * showOffset).toInt()))
+        val placeable = measurables[0].measure(c.copy(minWidth = 0,
+                minHeight = 0,
+                maxHeight = c.maxHeight - (72.dp.toPx() * showOffset).toInt()))
 
         layout(c.maxWidth, c.maxHeight) {
             placeable.placeRelative(0, 0)
             if (state.playerState.drag.currentValue && state.playerState.drag.targetValue) {
                 sheetPlaceable.placeRelative(0, c.maxHeight - (sheetPlaceable.height * showOffset).toInt())
             } else {
-                sheetPlaceable.placeRelative(0, c.maxHeight - (72.dp.toPx() * showOffset).toInt() + state.playerState.drag.offset.roundToInt())
+                sheetPlaceable.placeRelative(0,
+                        c.maxHeight - (72.dp.toPx() * showOffset).toInt() + state.playerState.drag.offset.roundToInt())
             }
         }
     }

@@ -3,7 +3,6 @@ package xyz.stalinsky.ampd.ui
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.SizeTransform
-import androidx.compose.animation.core.MutableTransitionState
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -63,8 +62,7 @@ import kotlin.time.Duration.Companion.milliseconds
 
 @OptIn(ExperimentalFoundationApi::class)
 class PlayerState(
-        val drag: AnchoredDraggableState<Boolean>,
-        val expand: MutableState<Boolean>)
+        val drag: AnchoredDraggableState<Boolean>, val expand: MutableState<Boolean>)
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
@@ -93,9 +91,11 @@ fun Player(
                         state.expand.value = false
                     }
 
-                    ConstraintLayout(Modifier.graphicsLayer {
-                        this.alpha = alpha
-                    }.fillMaxSize()) {
+                    ConstraintLayout(Modifier
+                            .graphicsLayer {
+                                this.alpha = alpha
+                            }
+                            .fillMaxSize()) {
                         val (closeRef, queueRef) = createRefs()
                         IconButton({ state.expand.value = false }, Modifier.constrainAs(closeRef) {
                             end.linkTo(parent.end, 16.dp)
@@ -131,15 +131,19 @@ fun Player(
                         }
                     }
                 } else {
-                    Box(Modifier.fillMaxWidth().height(372.dp)) {
+                    Box(Modifier
+                            .fillMaxWidth()
+                            .height(372.dp)) {
                         val scope = rememberCoroutineScope()
 
                         if (!state.drag.targetValue || !state.drag.currentValue) {
                             val maxOffset = state.drag.anchors.positionOf(true)
-                            Box(Modifier.graphicsLayer {
+                            Box(Modifier
+                                    .graphicsLayer {
                                         alpha = (maxOffset - state.drag.offset) / maxOffset
-                                    }.fillMaxSize().anchoredDraggable(state.drag,
-                                            Orientation.Vertical)
+                                    }
+                                    .fillMaxSize()
+                                    .anchoredDraggable(state.drag, Orientation.Vertical)
                                     .clickable {
                                         scope.launch {
                                             state.drag.anchoredDrag(!state.drag.currentValue) { anchors, target ->
@@ -187,10 +191,12 @@ fun Player(
                                 }
                             }
                             val maxOffset = state.drag.anchors.positionOf(true)
-                            ConstraintLayout(Modifier.graphicsLayer {
+                            ConstraintLayout(Modifier
+                                    .graphicsLayer {
                                         alpha = state.drag.offset / maxOffset
-                                    }.fillMaxSize().anchoredDraggable(state.drag,
-                                            Orientation.Vertical)
+                                    }
+                                    .fillMaxSize()
+                                    .anchoredDraggable(state.drag, Orientation.Vertical)
                                     .clickable {
                                         scope.launch {
                                             state.drag.anchoredDrag(!state.drag.currentValue) { anchors, target ->
@@ -325,7 +331,6 @@ fun rememberPlayerState(): PlayerState {
         false at 0f
     }
     return remember {
-        PlayerState(AnchoredDraggableState(false, anchors, { it / 2 }, { 0f }, tween()),
-                mutableStateOf(false))
+        PlayerState(AnchoredDraggableState(false, anchors, { it / 2 }, { 0f }, tween()), mutableStateOf(false))
     }
 }

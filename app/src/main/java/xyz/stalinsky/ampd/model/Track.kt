@@ -5,6 +5,8 @@ data class Track(
         val file: String,
         val title: String,
         val albumId: String,
+        val album: String,
         val artistId: String,
+        val artist: String,
         val side: Int,
         val track: Int)

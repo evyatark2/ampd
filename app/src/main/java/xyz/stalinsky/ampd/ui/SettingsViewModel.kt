@@ -11,8 +11,7 @@ import javax.inject.Inject
 
 @HiltViewModel
 class SettingsViewModel @Inject constructor(
-        private val settings: SettingsRepository,
-        private val config: UiConfigRepository) : ViewModel() {
+        private val settings: SettingsRepository, private val config: UiConfigRepository) : ViewModel() {
     val tabs = config.tabs.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), listOf())
     val defaultTab = config.defaultTab.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0)
 

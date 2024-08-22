@@ -108,54 +108,47 @@ fun Main(viewModel: MainViewModel = hiltViewModel()) {
 
     var innerTitle by remember { mutableStateOf("") }
     val route by navController.currentBackStackEntryAsState()
-    PlayerSheetScaffold(state, Modifier, (route?.destination?.route == "main" || route?.destination?.route == "artist/{id}" || route?.destination?.route == "album/{id}") && queue != null, {
-        Player(state.playerState,
-                loading,
-                playing,
-                if (currentItem != -1) {
+    PlayerSheetScaffold(state,
+            Modifier,
+            (route?.destination?.route == "main" || route?.destination?.route == "artist/{id}" || route?.destination?.route == "album/{id}") && queue != null,
+            {
+                Player(state.playerState, loading, playing, if (currentItem != -1) {
                     queue?.run { Pair(this, currentItem) }
                 } else {
                     null
-                },
-                {
+                }, {
                     viewModel.progress()
-                },
-                duration,
-                {
+                }, duration, {
                     viewModel.play()
-                },
-                {
+                }, {
                     viewModel.pause()
-                },
-                {
+                }, {
                     viewModel.seek(it)
-                },
-                {
+                }, {
                     viewModel.next()
-                },
-                {
+                }, {
                     viewModel.prev()
-                },
-                {
+                }, {
                     viewModel.skipTo(it)
                 })
-    }, {
-        val title = when (route?.destination?.route) {
-            "main"     -> stringResource(R.string.app_name)
-            "settings" -> stringResource(R.string.settings)
-            "tabs"     -> stringResource(R.string.tabs)
-            else       -> innerTitle
-        }
+            },
+            {
+                val title = when (route?.destination?.route) {
+                    "main"     -> stringResource(R.string.app_name)
+                    "settings" -> stringResource(R.string.settings)
+                    "tabs"     -> stringResource(R.string.tabs)
+                    else       -> innerTitle
+                }
 
-        TopAppBar({ Text(title) }, actions = {
-            IconButton(onClick = { }) {
-                Icon(Icons.Default.Search, "")
-            }
-            IconButton(onClick = { navController.navigate("settings") }) {
-                Icon(Icons.Default.Settings, "")
-            }
-        })
-    }) {
+                TopAppBar({ Text(title) }, actions = {
+                    IconButton(onClick = { }) {
+                        Icon(Icons.Default.Search, "")
+                    }
+                    IconButton(onClick = { navController.navigate("settings") }) {
+                        Icon(Icons.Default.Settings, "")
+                    }
+                })
+            }) {
         NavHost(navController, "main", Modifier.fillMaxSize()) {
             composable("main") {
                 innerTitle = ""
@@ -451,7 +444,7 @@ fun AlbumsScreen(onRetry: () -> Unit, onClick: (String) -> Unit, viewModel: Albu
 fun Albums(albums: List<Album>, onClick: (Int) -> Unit, onAddToQueue: (Int) -> Unit, onPlayNext: (Int) -> Unit) {
     LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(0.dp, 8.dp)) {
         itemsIndexed(albums) { i, album ->
-            Album(album.title, album.artistId, {
+            Album(album.title, album.artist, {
                 onClick(i)
             }, {
                 onAddToQueue(i)
@@ -494,14 +487,14 @@ fun ArtistScreen(
                 }, Modifier.clickable {
                     scope.launch {
                         viewModel.setQueue(it.map {
-                            val metadata = MediaMetadata.Builder().setTitle(it.title).setArtist(it.artistId)
-                                    .setAlbumTitle(it.albumId).build()
+                            val metadata = MediaMetadata.Builder().setTitle(it.title).setArtist(it.artist)
+                                    .setAlbumTitle(it.album).build()
                             MediaItem.Builder().setMediaId(it.id).setMediaMetadata(metadata)
                                     .setUri(Uri.parse("")).build()
                         }, i)
                     }
                 }, supportingContent = {
-                    SingleLineText(song.artistId)
+                    SingleLineText(song.artist)
                 })
             }
         }
@@ -517,7 +510,7 @@ fun AlbumScreen(
         viewModel: AlbumViewModel = hiltViewModel()) {
     val tracks by viewModel.trackList.collectAsState()
     LaunchedEffect(id) {
-        setTitle(viewModel.getName(id) ?: "")
+        setTitle(viewModel.getTitle(id) ?: "")
     }
 
     ConnectionScreen(tracks, onRetry) {
@@ -537,14 +530,14 @@ fun AlbumScreen(
                 }, Modifier.clickable {
                     scope.launch {
                         viewModel.setQueue(it.map {
-                            val metadata = MediaMetadata.Builder().setTitle(it.title).setArtist(it.artistId)
-                                    .setAlbumTitle(it.albumId).build()
+                            val metadata = MediaMetadata.Builder().setTitle(it.title).setArtist(it.artist)
+                                    .setAlbumTitle(it.album).build()
                             MediaItem.Builder().setMediaId(it.id).setMediaMetadata(metadata)
                                     .setUri(Uri.parse("")).build()
                         }, i)
                     }
                 }, supportingContent = {
-                    SingleLineText(track.artistId)
+                    SingleLineText(track.artist)
                 }, leadingContent = {
                     ProvideTextStyle(MaterialTheme.typography.labelMedium) {
                         SingleLineText("${if (multiside) "${track.side}-" else ""}${track.track}")
