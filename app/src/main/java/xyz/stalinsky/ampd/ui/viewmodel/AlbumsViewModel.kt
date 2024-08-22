@@ -8,10 +8,12 @@ import androidx.media3.common.MediaMetadata
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.last
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import xyz.stalinsky.ampd.data.AlbumsRepository
 import xyz.stalinsky.ampd.data.PlayerRepository
+import xyz.stalinsky.ampd.data.SettingsRepository
 import xyz.stalinsky.ampd.data.TracksRepository
 import xyz.stalinsky.ampd.ui.MpdConnectionState
 import javax.inject.Inject
@@ -20,6 +22,7 @@ import javax.inject.Inject
 class AlbumsViewModel @Inject constructor(
         repo: AlbumsRepository,
         private val tracks: TracksRepository,
+        private val settings: SettingsRepository,
         private val player: PlayerRepository) : ViewModel() {
     val albums = repo.getAllAlbums().map {
         it?.map {
@@ -37,7 +40,7 @@ class AlbumsViewModel @Inject constructor(
             val metadata =
                     MediaMetadata.Builder().setTitle(it.title).setArtist(it.artistId).setAlbumTitle(it.albumId).build()
             MediaItem.Builder().setMediaId(it.id).setMediaMetadata(metadata)
-                    .setUri(Uri.parse("")).build()
+                    .setUri(Uri.parse("${settings.libraryHost.first()}/${it.file}")).build()
         } ?: listOf())
     }
 
@@ -47,7 +50,7 @@ class AlbumsViewModel @Inject constructor(
             val metadata =
                     MediaMetadata.Builder().setTitle(it.title).setArtist(it.artistId).setAlbumTitle(it.albumId).build()
             MediaItem.Builder().setMediaId(it.id).setMediaMetadata(metadata)
-                    .setUri(Uri.parse("")).build()
+                    .setUri(Uri.parse("${settings.libraryHost.first()}/${it.file}")).build()
         } ?: listOf())
     }
 }

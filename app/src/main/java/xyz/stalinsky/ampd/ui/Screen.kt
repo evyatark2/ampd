@@ -489,8 +489,7 @@ fun ArtistScreen(
                         viewModel.setQueue(it.map {
                             val metadata = MediaMetadata.Builder().setTitle(it.title).setArtist(it.artist)
                                     .setAlbumTitle(it.album).build()
-                            MediaItem.Builder().setMediaId(it.id).setMediaMetadata(metadata)
-                                    .setUri(Uri.parse("")).build()
+                            Pair(it.file, MediaItem.Builder().setMediaId(it.id).setMediaMetadata(metadata))
                         }, i)
                     }
                 }, supportingContent = {
@@ -532,8 +531,7 @@ fun AlbumScreen(
                         viewModel.setQueue(it.map {
                             val metadata = MediaMetadata.Builder().setTitle(it.title).setArtist(it.artist)
                                     .setAlbumTitle(it.album).build()
-                            MediaItem.Builder().setMediaId(it.id).setMediaMetadata(metadata)
-                                    .setUri(Uri.parse("")).build()
+                            Pair(it.file, MediaItem.Builder().setMediaId(it.id).setMediaMetadata(metadata))
                         }, i)
                     }
                 }, supportingContent = {

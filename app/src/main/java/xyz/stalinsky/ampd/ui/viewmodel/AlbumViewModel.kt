@@ -1,11 +1,13 @@
 package xyz.stalinsky.ampd.ui.viewmodel
 
+import android.net.Uri
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.media3.common.MediaItem
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import xyz.stalinsky.ampd.data.AlbumsRepository
@@ -30,8 +32,8 @@ class AlbumViewModel @Inject constructor(
 
     suspend fun getTitle(id: String) = albums.getAlbumById(id)?.title
 
-    fun setQueue(items: List<MediaItem>, i: Int) {
-        player.setQueue(items, i)
+    suspend fun setQueue(items: List<Pair<String, MediaItem.Builder>>, i: Int) {
+        player.setQueue(items.map { it.second.setUri(Uri.parse("${settings.libraryHost.first()}/${it.first}")).build() }, i)
     }
 
     companion object {
