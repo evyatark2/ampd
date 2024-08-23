@@ -9,6 +9,7 @@ import io.ktor.network.sockets.openWriteChannel
 import io.ktor.network.tls.tls
 import io.ktor.utils.io.ByteReadChannel
 import io.ktor.utils.io.ByteWriteChannel
+import io.ktor.utils.io.core.readBytes
 import io.ktor.utils.io.readUTF8Line
 import io.ktor.utils.io.writeStringUtf8
 import kotlinx.coroutines.Dispatchers
@@ -36,6 +37,7 @@ data class MpdSong(
 sealed interface MpdResponse {
     class MpdListResponse(val data: List<MpdGroupNode>) : MpdResponse
     class MpdFindResponse(val data: List<MpdSong>) : MpdResponse
+    class MpdAlbumArtResponse(val size: Long, val data: ByteArray) : MpdResponse
     class MpdCommandListResponse(val data: List<MpdResponse>) : MpdResponse
 
     class MpdErrResponse(val code: MpdErrCode)
@@ -53,7 +55,10 @@ sealed interface MpdFilter {
 }
 
 sealed interface MpdRequest {
-    class MpdListRequest(val type: MpdTag, val filter: MpdFilter?, private val groups_: List<MpdTag>) : MpdRequest {
+    class MpdListRequest(
+            val type: MpdTag,
+            val filter: MpdFilter? = null,
+            private val groups_: List<MpdTag> = listOf()) : MpdRequest {
         val groups = buildList {
             addAll(groups_)
             add(type)
@@ -66,8 +71,16 @@ sealed interface MpdRequest {
         }\n"
     }
 
-    data class MpdFindRequest(private val filter: MpdFilter, private val sort: MpdTag?) : MpdRequest {
-        override fun toString() = "find \"$filter\"${if (sort != null) " sort $sort" else ""}\n"
+    data class MpdFindRequest(
+            private val filter: MpdFilter,
+            private val sort: MpdTag? = null,
+            private val window: Pair<Int, Int>? = null) : MpdRequest {
+        override fun toString() =
+                "find \"$filter\"${if (sort != null) " sort $sort" else ""}${if (window != null) " window ${window.first}:${window.second}" else ""}\n"
+    }
+
+    data class MpdAlbumArtRequest(private val uri: String, private val offset: Long) : MpdRequest {
+        override fun toString() = "albumart \"${uri.replace("\"", "\\\"")}\" ${offset}\n"
     }
 
     data class MpdCommandListRequest(val list: List<MpdRequest>) : MpdRequest {
@@ -98,7 +111,10 @@ class MpdClient private constructor(
                 while (true) {
                     val line = source.readUTF8Line() ?: throw EOFException()
 
-                    if (line == end) break
+                    if (line == end) {
+                        list.add(MpdSong(file, map))
+                        break
+                    }
 
                     val split = line.split(": ", limit = 2)
                     if (split.size != 2) throw EOFException()
@@ -152,7 +168,19 @@ class MpdClient private constructor(
                 MpdResponse.MpdListResponse(nodeStack.first.second)
             }
 
-            else                         -> {
+            is MpdRequest.MpdAlbumArtRequest -> {
+                val size = source.readUTF8Line()?.split(": ")?.last()?.toLong() ?: throw EOFException()
+                val chunkSize = source.readUTF8Line()?.split(": ")?.last()?.toInt() ?: throw EOFException()
+                val binary = source.readPacket(chunkSize).readBytes()
+
+                source.readUTF8Line() ?: throw EOFException() // Binary data ends with an extra EOL
+                val ok = source.readUTF8Line() ?: throw EOFException()
+                if (ok != end) throw EOFException()
+
+                MpdResponse.MpdAlbumArtResponse(size, binary)
+            }
+
+            else -> {
                 throw IllegalArgumentException()
             }
         }

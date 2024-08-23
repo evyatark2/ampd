@@ -8,9 +8,9 @@ import androidx.media3.common.MediaMetadata
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.flow.last
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
+import okio.Buffer
 import xyz.stalinsky.ampd.data.AlbumsRepository
 import xyz.stalinsky.ampd.data.PlayerRepository
 import xyz.stalinsky.ampd.data.SettingsRepository
@@ -20,7 +20,7 @@ import javax.inject.Inject
 
 @HiltViewModel
 class AlbumsViewModel @Inject constructor(
-        repo: AlbumsRepository,
+        private val repo: AlbumsRepository,
         private val tracks: TracksRepository,
         private val settings: SettingsRepository,
         private val player: PlayerRepository) : ViewModel() {
@@ -31,6 +31,8 @@ class AlbumsViewModel @Inject constructor(
             MpdConnectionState.Error(it)
         } ?: MpdConnectionState.Loading()
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), MpdConnectionState.Loading())
+
+    suspend fun getAlbumArt(id: String, offset: Long, buf: Buffer) = repo.getAlbumArt(id, offset, buf)
 
     suspend fun addToQueue(id: String) {
         val songs = tracks.getTracksForAlbum(id).first()

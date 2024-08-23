@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.pager.HorizontalPager
@@ -44,6 +45,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
@@ -59,10 +61,21 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
+import coil.EventListener
+import coil.ImageLoader
+import coil.compose.AsyncImage
+import coil.decode.DataSource
+import coil.decode.ImageSource
+import coil.fetch.Fetcher
+import coil.fetch.SourceResult
+import coil.request.ErrorResult
+import coil.request.ImageRequest
+import coil.request.Options
 import io.ktor.network.sockets.InetSocketAddress
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import okio.Buffer
 import xyz.stalinsky.ampd.R
 import xyz.stalinsky.ampd.Settings
 import xyz.stalinsky.ampd.model.Album
@@ -423,10 +436,38 @@ fun Artist(name: String, onClick: () -> Unit, onAddToQueue: () -> Unit, onPlayNe
 fun AlbumsScreen(onRetry: () -> Unit, onClick: (String) -> Unit, viewModel: AlbumsViewModel = hiltViewModel()) {
     val albumsState = viewModel.albums.collectAsState()
 
-    val scope = rememberCoroutineScope()
-
     ConnectionScreen(albumsState.value, onRetry) { albums ->
-        Albums(albums, {
+        val scope = rememberCoroutineScope()
+        val context = LocalContext.current
+        val loader = remember {
+            ImageLoader.Builder(context).components {
+                add(object : Fetcher.Factory<Uri> {
+                    val partials = mutableMapOf<Uri, Buffer>()
+
+                    override fun create(data: Uri, options: Options, imageLoader: ImageLoader): Fetcher {
+                        val buf = partials.getOrElse(data) {
+                            val buf = Buffer()
+                            partials[data] = buf
+                            buf
+                        }
+                        return Fetcher {
+                            val size = viewModel.getAlbumArt(data.toString(), buf.size, buf)
+                                    ?: throw IllegalStateException()
+                            while (buf.size < size) {
+                                viewModel.getAlbumArt(data.toString(), buf.size, buf) ?: throw IllegalStateException()
+                            }
+                            partials.remove(data)
+                            SourceResult(ImageSource(buf, options.context), null, DataSource.NETWORK)
+                        }
+                    }
+                })
+            }.eventListener(object : EventListener {
+                override fun onError(request: ImageRequest, result: ErrorResult) {
+                    result.throwable.printStackTrace()
+                }
+            }).build()
+        }
+        Albums(albums, loader, {
             onClick(albums[it].id)
         }, {
             scope.launch {
@@ -441,10 +482,17 @@ fun AlbumsScreen(onRetry: () -> Unit, onClick: (String) -> Unit, viewModel: Albu
 }
 
 @Composable
-fun Albums(albums: List<Album>, onClick: (Int) -> Unit, onAddToQueue: (Int) -> Unit, onPlayNext: (Int) -> Unit) {
+fun Albums(
+        albums: List<Album>,
+        loader: ImageLoader,
+        onClick: (Int) -> Unit,
+        onAddToQueue: (Int) -> Unit,
+        onPlayNext: (Int) -> Unit) {
     LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(0.dp, 8.dp)) {
         itemsIndexed(albums) { i, album ->
-            Album(album.title, album.artist, {
+            Album({
+                AsyncImage(album.art, "", loader, Modifier.size(56.dp))
+            }, album.title, album.artist, {
                 onClick(i)
             }, {
                 onAddToQueue(i)
@@ -456,14 +504,20 @@ fun Albums(albums: List<Album>, onClick: (Int) -> Unit, onAddToQueue: (Int) -> U
 }
 
 @Composable
-fun Album(title: String, artist: String, onClick: () -> Unit, onAddToQueue: () -> Unit, onPlayNext: () -> Unit) {
-    ListItem(headlineContent = {
+fun Album(
+        art: @Composable () -> Unit,
+        title: String,
+        artist: String,
+        onClick: () -> Unit,
+        onAddToQueue: () -> Unit,
+        onPlayNext: () -> Unit) {
+    ListItem({
         SingleLineText(title)
     }, Modifier.clickable {
         onClick()
     }, supportingContent = {
         SingleLineText(artist)
-    })
+    }, leadingContent = art)
 }
 
 @Composable

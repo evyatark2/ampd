@@ -14,6 +14,7 @@ import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.withContext
+import okio.Buffer
 import xyz.stalinsky.ampd.model.Album
 import xyz.stalinsky.ampd.model.Artist
 import xyz.stalinsky.ampd.model.Song
@@ -263,9 +264,7 @@ class MpdRemoteDataSource @Inject constructor() {
     }
 
     suspend fun fetchArtistNameById(id: String): String? {
-        val res = request(MpdRequest.MpdListRequest(MpdTag.Artist,
-                MpdFilter.Equal(MpdTag.MUSICBRAINZ_ARTISTID, id),
-                listOf()))
+        val res = request(MpdRequest.MpdListRequest(MpdTag.Artist, MpdFilter.Equal(MpdTag.MUSICBRAINZ_ARTISTID, id)))
 
         return ((res as MpdResponse.MpdListResponse?)?.data?.first() as MpdGroupNode.Leaf?)?.data
     }
@@ -299,12 +298,18 @@ class MpdRemoteDataSource @Inject constructor() {
 
                     val res = request(MpdRequest.MpdCommandListRequest(out.map {
                         MpdRequest.MpdListRequest(MpdTag.AlbumArtist,
-                                MpdFilter.Equal(MpdTag.MUSICBRAINZ_ALBUMARTISTID, it.artistId),
-                                listOf())
+                                MpdFilter.Equal(MpdTag.MUSICBRAINZ_ALBUMARTISTID, it.artistId))
                     })) as MpdResponse.MpdCommandListResponse? ?: return@flow
 
                     out.zip(res.data.map { (it as MpdResponse.MpdListResponse).data.first() }).map {
-                        Album(it.first.id, it.first.title, it.first.artistId, (it.second as MpdGroupNode.Leaf).data)
+                        val res = request(MpdRequest.MpdFindRequest(MpdFilter.Equal(MpdTag.MUSICBRAINZ_ALBUMID,
+                                it.first.id), null, Pair(0, 1))) as MpdResponse.MpdFindResponse?
+
+                        Album(it.first.id,
+                                it.first.title,
+                                it.first.artistId,
+                                (it.second as MpdGroupNode.Leaf).data,
+                                res?.data?.get(0)?.file ?: "")
                     }
                 })
             }
@@ -315,20 +320,31 @@ class MpdRemoteDataSource @Inject constructor() {
 
     suspend fun fetchAlbumById(id: String): Album? {
         val res = request(MpdRequest.MpdCommandListRequest(listOf(MpdRequest.MpdListRequest(MpdTag.Album,
-                MpdFilter.Equal(MpdTag.MUSICBRAINZ_ALBUMID, id),
-                listOf()),
+                MpdFilter.Equal(MpdTag.MUSICBRAINZ_ALBUMID, id)),
                 MpdRequest.MpdListRequest(MpdTag.MUSICBRAINZ_ALBUMARTISTID,
-                        MpdFilter.Equal(MpdTag.MUSICBRAINZ_ALBUMID, id),
-                        listOf()),
+                        MpdFilter.Equal(MpdTag.MUSICBRAINZ_ALBUMID, id)),
                 MpdRequest.MpdListRequest(MpdTag.AlbumArtist,
-                        MpdFilter.Equal(MpdTag.MUSICBRAINZ_ALBUMID, id),
-                        listOf())))) as MpdResponse.MpdCommandListResponse?
+                        MpdFilter.Equal(MpdTag.MUSICBRAINZ_ALBUMID, id))))) as MpdResponse.MpdCommandListResponse?
 
         val album = ((res?.data?.get(0) as MpdResponse.MpdListResponse?)?.data?.first() as MpdGroupNode.Leaf?)?.data
         val artistId = ((res?.data?.get(1) as MpdResponse.MpdListResponse?)?.data?.first() as MpdGroupNode.Leaf?)?.data
         val artist = ((res?.data?.get(2) as MpdResponse.MpdListResponse?)?.data?.first() as MpdGroupNode.Leaf?)?.data
 
-        return Album(id, album ?: return null, artistId ?: return null, artist ?: return null)
+        val uri = request(MpdRequest.MpdFindRequest(MpdFilter.Equal(MpdTag.MUSICBRAINZ_ALBUMID, id),
+                null,
+                Pair(0, 1))) as MpdResponse.MpdFindResponse?
+
+        return Album(id,
+                album ?: return null,
+                artistId ?: return null,
+                artist ?: return null,
+                uri?.data?.get(0)?.file ?: "")
+    }
+
+    suspend fun fetchAlbumArt(uri: String, offset: Long, buf: Buffer): Long? {
+        val art = request(MpdRequest.MpdAlbumArtRequest(uri, offset)) as MpdResponse.MpdAlbumArtResponse?
+        buf.write(art?.data ?: ByteArray(0))
+        return art?.size
     }
 
     fun fetchAlbumTracks(id: String) = flow {

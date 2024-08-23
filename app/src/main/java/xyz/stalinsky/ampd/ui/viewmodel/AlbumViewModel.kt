@@ -33,7 +33,9 @@ class AlbumViewModel @Inject constructor(
     suspend fun getTitle(id: String) = albums.getAlbumById(id)?.title
 
     suspend fun setQueue(items: List<Pair<String, MediaItem.Builder>>, i: Int) {
-        player.setQueue(items.map { it.second.setUri(Uri.parse("${settings.libraryHost.first()}/${it.first}")).build() }, i)
+        player.setQueue(items.map {
+            it.second.setUri(Uri.parse("${settings.libraryHost.first()}/${it.first}")).build()
+        }, i)
     }
 
     companion object {
