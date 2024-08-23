@@ -1,0 +1,21 @@
+Prepared
+
+# Conflicts:
+#	app/build.gradle.kts
+#	gradle/libs.versions.toml
+
+# Please enter the commit message for your changes. Lines starting
+# with '#' will be ignored, and an empty message aborts the commit.
+#
+# interactive rebase in progress; onto e5eed46
+# Last command done (1 command done):
+#    pick 10138ad Prepared
+# Next commands to do (3 remaining commands):
+#    squash a98fea3 Add Coil dependency
+#    pick 30c2a28 Add support for music library host
+# You are currently rebasing branch 'master' on 'e5eed46'.
+#
+# Changes to be committed:
+#	modified:   app/build.gradle.kts
+#	modified:   gradle/libs.versions.toml
+#
