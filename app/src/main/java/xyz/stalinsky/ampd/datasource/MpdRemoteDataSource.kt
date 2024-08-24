@@ -13,6 +13,7 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import okio.Buffer
 import xyz.stalinsky.ampd.model.Album
@@ -25,6 +26,7 @@ import xyz.stalinsky.ampd.service.MpdGroupNode
 import xyz.stalinsky.ampd.service.MpdRequest
 import xyz.stalinsky.ampd.service.MpdResponse
 import xyz.stalinsky.ampd.service.MpdTag
+import java.io.EOFException
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -39,42 +41,95 @@ class MpdRemoteDataSource @Inject constructor() {
     private val subscribers = mutableListOf<Pair<SendChannel<Result<MpdResponse>?>, MpdRequest>>()
 
     private suspend fun request(req: MpdRequest): MpdResponse? {
-        mutex.lock()
-        return try {
-            reqChannel.send(Request.Fetch(req))
-            (resChannel.receive() as Response.Fetch?)?.res
-        } catch (e: CancellationException) {
-            withContext(NonCancellable) {
-                resChannel.receive()
+        return mutex.withLock {
+            try {
+                reqChannel.send(Request.Fetch(req))
+                (resChannel.receive() as Response.Fetch?)?.res
+            } catch (e: CancellationException) {
+                withContext(NonCancellable) {
+                    resChannel.receive()
+                }
+                null
+            } catch (e: Throwable) {
+                null
             }
-            e.printStackTrace()
-            null
-        } finally {
-            mutex.unlock()
         }
     }
 
     private suspend fun subscribe(req: MpdRequest): ReceiveChannel<Result<MpdResponse>?>? {
-        mutex.lock()
-        return try {
-            reqChannel.send(Request.Subscribe(req))
-            (resChannel.receive() as Response.Subscribe).res
-        } catch (e: CancellationException) {
-            withContext(NonCancellable) {
-                resChannel.receive()
+        return mutex.withLock {
+            try {
+                reqChannel.send(Request.Subscribe(req))
+                (resChannel.receive() as Response.Subscribe).res
+            } catch (e: CancellationException) {
+                withContext(NonCancellable) {
+                    resChannel.receive()
+                }
+                null
             }
-            e.printStackTrace()
-            null
-        } finally {
-            mutex.unlock()
         }
+    }
+
+    @OptIn(DelicateCoroutinesApi::class)
+    private suspend fun reconnect(addr: SocketAddress?, tls: Boolean): Result<MpdClient>? {
+        if (addr == null) return null
+
+        val client = try {
+            MpdClient(addr, tls)
+        } catch (e: CancellationException) {
+            return null
+        } catch (e: Throwable) {
+            subscribersMutex.withLock {
+                val iter = subscribers.iterator()
+                while (iter.hasNext()) {
+                    val s = iter.next()
+                    try {
+                        s.first.send(Result.failure(e))
+                    } catch (e: CancellationException) {
+                        if (s.first.isClosedForSend) {
+                            s.first.close()
+                            iter.remove()
+                        } else {
+                            return null
+                        }
+                    }
+                }
+            }
+            return Result.failure(e)
+        }
+
+        subscribersMutex.withLock {
+            val iter = subscribers.iterator()
+            while (iter.hasNext()) {
+                val s = iter.next()
+                try {
+                    val res = Result.success(client.request(s.second))
+                    s.first.send(res)
+                } catch (e: CancellationException) {
+                    if (s.first.isClosedForSend) {
+                        // Even if this CancellationException happened due to coroutine cancellation,
+                        // we will eventually return from this coroutine in a later cancel point
+                        s.first.close()
+                        iter.remove()
+                    } else {
+                        client.close()
+                        return null
+                    }
+                } catch (e: Throwable) {
+                    client.close()
+                    s.first.send(Result.failure(e))
+                    return Result.failure(e)
+                }
+            }
+        }
+
+        return Result.success(client)
     }
 
     @OptIn(DelicateCoroutinesApi::class)
     suspend fun connect(addr: SocketAddress?, tls: Boolean) {
         withContext(Dispatchers.IO) {
-            subscribersMutex.lock()
-            try {
+            subscribersMutex.withLock {
                 val iter = subscribers.iterator()
                 while (iter.hasNext()) {
                     val s = iter.next()
@@ -89,59 +144,13 @@ class MpdRemoteDataSource @Inject constructor() {
                         }
                     }
                 }
-            } finally {
-                subscribersMutex.unlock()
             }
 
-            if (addr == null) return@withContext
-
+            val res = reconnect(addr, tls) ?: return@withContext
             var exp: Throwable? = null
-            val client = try {
-                MpdClient(addr, tls)
-            } catch (e: CancellationException) {
-                return@withContext
-            } catch (e: Throwable) {
-                val iter = subscribers.iterator()
-                while (iter.hasNext()) {
-                    val s = iter.next()
-                    try {
-                        s.first.send(Result.failure(e))
-                    } catch (e: CancellationException) {
-                        if (s.first.isClosedForSend) {
-                            s.first.close()
-                            iter.remove()
-                        } else {
-                            return@withContext
-                        }
-                    }
-                }
-                exp = e
+            var client = res.getOrElse {
+                exp = it
                 null
-            }
-
-            if (client != null) {
-                subscribersMutex.lock()
-                try {
-                    val iter = subscribers.iterator()
-                    while (iter.hasNext()) {
-                        val s = iter.next()
-                        try {
-                            val res = Result.success(client.request(s.second))
-                            s.first.send(res)
-                        } catch (e: CancellationException) {
-                            if (s.first.isClosedForSend) {
-                                s.first.close()
-                                iter.remove()
-                            } else {
-                                return@withContext
-                            }
-                        } catch (e: Throwable) {
-                            s.first.send(Result.failure(e))
-                        }
-                    }
-                } finally {
-                    subscribersMutex.unlock()
-                }
             }
 
             try {
@@ -152,24 +161,62 @@ class MpdRemoteDataSource @Inject constructor() {
                             is Request.Fetch     -> {
                                 try {
                                     resChannel.send(Response.Fetch(client.request(req.req)))
-                                } catch (e: CancellationException) {
-                                    e.printStackTrace()
+                                } catch (_: EOFException) {
+                                    val res = reconnect(addr, tls) ?: return@withContext
+                                    client = res.getOrElse {
+                                        exp = it
+                                        null
+                                    }
+
+                                    if (client != null) {
+                                        try {
+                                            resChannel.send(Response.Fetch(client.request(req.req)))
+                                        } catch (_: CancellationException) {
+                                        } catch (e: Throwable) {
+                                            try {
+                                                resChannel.send(Response.Fetch(null))
+                                            } catch (_: CancellationException) { }
+                                        }
+                                    }
+                                } catch (_: CancellationException) {
                                 } catch (e: Throwable) {
-                                    resChannel.send(null)
+                                    try {
+                                        resChannel.send(Response.Fetch(null))
+                                    } catch (_: CancellationException) { }
                                 }
                             }
 
                             is Request.Subscribe -> {
                                 Log.i("TAG", "Subscription")
                                 val source = Channel<Result<MpdResponse>?>()
-                                subscribersMutex.lock()
-                                subscribers.add(Pair(source, req.req))
-                                subscribersMutex.unlock()
-                                resChannel.send(Response.Subscribe(source))
+                                subscribersMutex.withLock {
+                                    subscribers.add(Pair(source, req.req))
+                                }
                                 try {
+                                    resChannel.send(Response.Subscribe(source))
                                     source.send(Result.success(client.request(req.req)))
+                                } catch (e: EOFException) {
+                                    val res = reconnect(addr, tls) ?: return@withContext
+                                    client = res.getOrElse {
+                                        exp = it
+                                        null
+                                    }
+                                } catch (_: CancellationException) {
+                                    if (source.isClosedForSend) {
+                                        subscribersMutex.withLock {
+                                            subscribers.removeAll { it.first == source }
+                                        }
+                                    }
                                 } catch (e: Throwable) {
-                                    source.send(Result.failure(e))
+                                    try {
+                                        source.send(Result.failure(e))
+                                    } catch (_: CancellationException) {
+                                        if (source.isClosedForSend) {
+                                            subscribersMutex.withLock {
+                                                subscribers.removeAll { it.first == source }
+                                            }
+                                        }
+                                    }
                                 }
                             }
                         }
@@ -178,24 +225,20 @@ class MpdRemoteDataSource @Inject constructor() {
                             is Request.Fetch     -> {
                                 try {
                                     resChannel.send(Response.Fetch(null))
-                                } catch (e: CancellationException) {
-                                    e.printStackTrace()
-                                } catch (e: Throwable) {
-                                    resChannel.send(null)
+                                } catch (_: CancellationException) {
                                 }
                             }
 
                             is Request.Subscribe -> {
                                 Log.i("TAG", "Subscription")
                                 val source = Channel<Result<MpdResponse>?>()
-                                subscribersMutex.lock()
-                                subscribers.add(Pair(source, req.req))
-                                subscribersMutex.unlock()
-                                resChannel.send(Response.Subscribe(source))
+                                subscribersMutex.withLock {
+                                    subscribers.add(Pair(source, req.req))
+                                }
                                 try {
+                                    resChannel.send(Response.Subscribe(source))
                                     source.send(Result.failure(exp!!))
-                                } catch (e: CancellationException) {
-                                    e.printStackTrace()
+                                } catch (_: CancellationException) {
                                 }
                             }
                         }
