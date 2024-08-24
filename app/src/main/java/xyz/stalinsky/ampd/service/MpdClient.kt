@@ -9,7 +9,7 @@ import io.ktor.network.sockets.openWriteChannel
 import io.ktor.network.tls.tls
 import io.ktor.utils.io.ByteReadChannel
 import io.ktor.utils.io.ByteWriteChannel
-import io.ktor.utils.io.core.readBytes
+import io.ktor.utils.io.readFully
 import io.ktor.utils.io.readUTF8Line
 import io.ktor.utils.io.writeStringUtf8
 import kotlinx.coroutines.Dispatchers
@@ -171,7 +171,8 @@ class MpdClient private constructor(
             is MpdRequest.MpdAlbumArtRequest -> {
                 val size = source.readUTF8Line()?.split(": ")?.last()?.toLong() ?: throw EOFException()
                 val chunkSize = source.readUTF8Line()?.split(": ")?.last()?.toInt() ?: throw EOFException()
-                val binary = source.readPacket(chunkSize).readBytes()
+                val binary = ByteArray(chunkSize)
+                source.readFully(binary)
 
                 source.readUTF8Line() ?: throw EOFException() // Binary data ends with an extra EOL
                 val ok = source.readUTF8Line() ?: throw EOFException()
