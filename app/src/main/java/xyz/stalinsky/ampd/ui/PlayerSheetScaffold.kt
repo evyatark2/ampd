@@ -1,6 +1,8 @@
 package xyz.stalinsky.ampd.ui
 
-import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.InternalAnimationApi
+import androidx.compose.animation.core.VectorConverter
+import androidx.compose.animation.core.createDeferredAnimation
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.core.updateTransition
 import androidx.compose.foundation.ExperimentalFoundationApi
@@ -20,7 +22,7 @@ class PlayerSheetScaffoldState(
         val snackbarHostState: SnackbarHostState,
 )
 
-@OptIn(ExperimentalFoundationApi::class)
+@OptIn(ExperimentalFoundationApi::class, InternalAnimationApi::class)
 @Composable
 fun PlayerSheetScaffold(
         state: PlayerSheetScaffoldState,
@@ -30,13 +32,7 @@ fun PlayerSheetScaffold(
         topBarContent: @Composable () -> Unit,
         content: @Composable () -> Unit) {
     val showTransition = updateTransition(sheetVisible, label = "")
-    val showOffset by showTransition.animateFloat({ tween() }, label = "") {
-        if (it) {
-            1f
-        } else {
-            0f
-        }
-    }
+    val deferred = showTransition.createDeferredAnimation(Float.VectorConverter)
 
     Layout({
         Column {
@@ -48,6 +44,15 @@ fun PlayerSheetScaffold(
         }
     }, modifier) { measurables, c ->
         val sheetPlaceable = measurables[1].measure(c.copy(minHeight = 0, minWidth = 0))
+
+        val showOffset by deferred.animate({ tween() }) {
+            if (it) {
+                1f
+            } else {
+                0f
+            }
+        }
+
         val placeable = measurables[0].measure(c.copy(minWidth = 0,
                 minHeight = 0,
                 maxHeight = c.maxHeight - (72.dp.toPx() * showOffset).toInt()))

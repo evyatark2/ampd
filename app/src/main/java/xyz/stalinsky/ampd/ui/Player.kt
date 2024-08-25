@@ -82,7 +82,7 @@ fun Player(
     if (queue != null) {
         Surface(Modifier.fillMaxWidth(), RoundedCornerShape(28.dp), tonalElevation = 1.dp, shadowElevation = 1.dp) {
             AnimatedContent(state.expand.value, transitionSpec = {
-                fadeIn().togetherWith(fadeOut()).using(SizeTransform { initial, target ->
+                fadeIn(tween()).togetherWith(fadeOut(tween())).using(SizeTransform { initial, target ->
                     tween()
                 })
             }, label = "") { s ->
@@ -91,11 +91,7 @@ fun Player(
                         state.expand.value = false
                     }
 
-                    ConstraintLayout(Modifier
-                            .graphicsLayer {
-                                this.alpha = alpha
-                            }
-                            .fillMaxSize()) {
+                    ConstraintLayout(Modifier.fillMaxSize()) {
                         val (closeRef, queueRef) = createRefs()
                         IconButton({ state.expand.value = false }, Modifier.constrainAs(closeRef) {
                             end.linkTo(parent.end, 16.dp)
