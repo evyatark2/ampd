@@ -217,23 +217,24 @@ fun MainScreen(
         }
 
         TabRow(selectedTabIndex = pagerState.currentPage) {
+            val scope = rememberCoroutineScope()
             tabs.forEachIndexed { i, tab ->
                 if (tab.enabled) {
                     when (tab.type) {
                         Settings.TabType.TAB_TYPE_ARTISTS -> Tab(selected = i == pagerState.currentPage, onClick = {
-                            viewModel.viewModelScope.launch {
+                            scope.launch {
                                 pagerState.animateScrollToPage(i)
                             }
                         }, text = { Text(stringResource(R.string.artists)) })
 
                         Settings.TabType.TAB_TYPE_ALBUMS  -> Tab(selected = i == pagerState.currentPage, onClick = {
-                            viewModel.viewModelScope.launch {
+                            scope.launch {
                                 pagerState.animateScrollToPage(i)
                             }
                         }, text = { Text(stringResource(R.string.albums)) })
 
                         Settings.TabType.TAB_TYPE_GENRES  -> Tab(selected = i == pagerState.currentPage, onClick = {
-                            viewModel.viewModelScope.launch {
+                            scope.launch {
                                 pagerState.animateScrollToPage(i)
                             }
                         }, text = { Text(stringResource(R.string.genres)) })
