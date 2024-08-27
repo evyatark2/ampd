@@ -261,6 +261,8 @@ fun MainScreen(
                     Settings.TabType.TAB_TYPE_ALBUMS  -> {
                         AlbumsScreen(connectionState, onRetry, {
                             nav.navigate("album/${it}")
+                        }, {
+                            nav.navigate("artist/${it}")
                         })
                     }
 
@@ -480,6 +482,7 @@ fun AlbumsScreen(
         connectionState: MpdConnectionState<Unit>,
         onRetry: () -> Unit,
         onClick: (String) -> Unit,
+        onGoToArtist: (String) -> Unit,
         viewModel: AlbumsViewModel = hiltViewModel()) {
     var albumsState: Result<List<Album>>? by remember { mutableStateOf(null) }
 
@@ -542,6 +545,8 @@ fun AlbumsScreen(
             viewModel.viewModelScope.launch {
                 viewModel.playNext(albums[it].id)
             }
+        }, {
+            onGoToArtist(albums[it].artistId)
         }) {
             force = true
         }
@@ -556,6 +561,7 @@ fun Albums(
         onClick: (Int) -> Unit,
         onAddToQueue: (Int) -> Unit,
         onPlayNext: (Int) -> Unit,
+        onGoToArtist: (Int) -> Unit,
         onRefresh: () -> Unit) {
     val state = rememberPullToRefreshState()
     if (state.isRefreshing) {
@@ -574,8 +580,10 @@ fun Albums(
                     onClick(i)
                 }, {
                     onAddToQueue(i)
-                }) {
+                }, {
                     onPlayNext(i)
+                }) {
+                    onGoToArtist(i)
                 }
             }
         }
@@ -590,7 +598,8 @@ fun Album(
         artist: String,
         onClick: () -> Unit,
         onAddToQueue: () -> Unit,
-        onPlayNext: () -> Unit) {
+        onPlayNext: () -> Unit,
+        onGoToArtist: () -> Unit) {
     ListItem({
         SingleLineText(title)
     }, Modifier.clickable {
@@ -613,6 +622,10 @@ fun Album(
             DropdownMenuItem({ Text(stringResource(R.string.play_next)) }, {
                 expanded = false
                 onPlayNext()
+            })
+            DropdownMenuItem({ Text(stringResource(R.string.go_to_artist)) }, {
+                expanded = false
+                onGoToArtist()
             })
         }
     })

@@ -7,11 +7,12 @@
     <string name="tabs">טאבים</string>
     <string name="add_to_queue">הוסף לתור</string>
     <string name="play_next">Play Next</string>
-    <string name="songs">Songs</string>
-    <string name="genres">Genres</string>
+    <string name="songs">שירים</string>
+    <string name="genres">ז\'אנרים</string>
     <string name="music_library_host">Music Library Host</string>
     <string name="music_library_port">Music Library Port</string>
     <string name="use_tls_with_mpd">Use TLS with MPD</string>
     <string name="mpd_host">MPD Host</string>
     <string name="mpd_port">MPD Port</string>
+    <string name="go_to_artist">מעבר לאמן</string>
 </resources>

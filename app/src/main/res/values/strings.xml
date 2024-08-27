@@ -13,4 +13,5 @@
     <string name="use_tls_with_mpd">Use TLS with MPD</string>
     <string name="mpd_host">MPD Host</string>
     <string name="mpd_port">MPD Port</string>
+    <string name="go_to_artist">Go to artist</string>
 </resources>
