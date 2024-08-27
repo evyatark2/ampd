@@ -34,6 +34,8 @@ import androidx.compose.material3.TabRow
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextField
 import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.pulltorefresh.PullToRefreshContainer
+import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -45,13 +47,15 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.hilt.navigation.compose.hiltViewModel
-import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.viewModelScope
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
 import androidx.navigation.NavController
@@ -80,6 +84,8 @@ import xyz.stalinsky.ampd.R
 import xyz.stalinsky.ampd.Settings
 import xyz.stalinsky.ampd.model.Album
 import xyz.stalinsky.ampd.model.Artist
+import xyz.stalinsky.ampd.model.Song
+import xyz.stalinsky.ampd.model.Track
 import xyz.stalinsky.ampd.ui.utils.SingleLineText
 import xyz.stalinsky.ampd.ui.viewmodel.AlbumViewModel
 import xyz.stalinsky.ampd.ui.viewmodel.AlbumsViewModel
@@ -104,18 +110,22 @@ fun Main(viewModel: MainViewModel = hiltViewModel()) {
     val tls by viewModel.mpdTls.collectAsState()
     var force by remember { mutableStateOf(false) }
 
+    var connectionState: MpdConnectionState<Unit> by remember { mutableStateOf(MpdConnectionState.Loading()) }
+
     if (!force) {
         LaunchedEffect(host, port, tls) {
-            val addr = withContext(Dispatchers.IO) {
-                try {
+            try {
+                val addr = withContext(Dispatchers.IO) {
                     InetSocketAddress(host, port)
-                } catch (e: Throwable) {
-                    null
                 }
+                viewModel.connect(addr, tls)
+                connectionState = MpdConnectionState.Ok(Unit)
+            } catch (e: Throwable) {
+                connectionState = MpdConnectionState.Error(e)
             }
-            viewModel.connect(addr, tls)
         }
     } else {
+        connectionState = MpdConnectionState.Loading()
         force = false
     }
 
@@ -165,7 +175,7 @@ fun Main(viewModel: MainViewModel = hiltViewModel()) {
         NavHost(navController, "main", Modifier.fillMaxSize()) {
             composable("main") {
                 innerTitle = ""
-                MainScreen({ force = true }, navController)
+                MainScreen(connectionState, { force = true }, navController)
             }
 
             composable("settings") {
@@ -179,13 +189,12 @@ fun Main(viewModel: MainViewModel = hiltViewModel()) {
             }
 
             composable("artist/{id}", listOf(navArgument("id") { type = NavType.StringType })) {
-                val id = it.arguments!!.getString("id")
-                ArtistScreen(id!!, { force = true }, { innerTitle = it }, navController)
+                ArtistScreen(connectionState, { force = true }, { innerTitle = it }, navController)
             }
 
             composable("album/{id}", listOf(navArgument("id") { type = NavType.StringType })) {
                 val id = it.arguments!!.getString("id")
-                AlbumScreen(id!!, { force = true }, { innerTitle = it }, navController)
+                AlbumScreen(connectionState, id!!, { force = true }, { innerTitle = it }, navController)
             }
         }
     }
@@ -193,7 +202,11 @@ fun Main(viewModel: MainViewModel = hiltViewModel()) {
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-fun MainScreen(onRetry: () -> Unit, nav: NavController, viewModel: MainViewModel = hiltViewModel()) {
+fun MainScreen(
+        connectionState: MpdConnectionState<Unit>,
+        onRetry: () -> Unit,
+        nav: NavController,
+        viewModel: MainViewModel = hiltViewModel()) {
     val tabs by viewModel.tabs.collectAsState()
     val defaultTab by viewModel.defaultTab.collectAsState()
 
@@ -222,12 +235,6 @@ fun MainScreen(onRetry: () -> Unit, nav: NavController, viewModel: MainViewModel
                             }
                         }, text = { Text(stringResource(R.string.albums)) })
 
-                        Settings.TabType.TAB_TYPE_SONGS   -> Tab(selected = i == pagerState.currentPage, onClick = {
-                            scope.launch {
-                                pagerState.animateScrollToPage(i)
-                            }
-                        }, text = { Text(stringResource(R.string.songs)) })
-
                         Settings.TabType.TAB_TYPE_GENRES  -> Tab(selected = i == pagerState.currentPage, onClick = {
                             scope.launch {
                                 pagerState.animateScrollToPage(i)
@@ -246,18 +253,17 @@ fun MainScreen(onRetry: () -> Unit, nav: NavController, viewModel: MainViewModel
             if (tab.enabled) {
                 when (tab.type) {
                     Settings.TabType.TAB_TYPE_ARTISTS -> {
-                        ArtistsScreen(onRetry, {
+                        ArtistsScreen(connectionState, onRetry, {
                             nav.navigate("artist/${it}")
                         })
                     }
 
                     Settings.TabType.TAB_TYPE_ALBUMS  -> {
-                        AlbumsScreen(onRetry, {
+                        AlbumsScreen(connectionState, onRetry, {
                             nav.navigate("album/${it}")
                         })
                     }
 
-                    Settings.TabType.TAB_TYPE_SONGS   -> TODO()
                     Settings.TabType.TAB_TYPE_GENRES  -> TODO()
                     Settings.TabType.UNRECOGNIZED     -> TODO()
                     null                              -> TODO()
@@ -370,22 +376,40 @@ fun TabsSettingScreen(viewModel: TabsSettingViewModel = hiltViewModel()) {
 }
 
 @Composable
-fun ArtistsScreen(onRetry: () -> Unit, onClick: (String) -> Unit, viewModel: ArtistsViewModel = hiltViewModel()) {
-    val artistsState = viewModel.artists.collectAsStateWithLifecycle()
+fun ArtistsScreen(
+        connectionState: MpdConnectionState<Unit>,
+        onRetry: () -> Unit,
+        onClick: (String) -> Unit,
+        viewModel: ArtistsViewModel = hiltViewModel()) {
+    var artistsState: Result<List<Artist>>? by remember { mutableStateOf(null) }
 
-    val scope = rememberCoroutineScope()
+    var force by remember { mutableStateOf(false) }
 
-    ConnectionScreen(artistsState.value, onRetry) { artists ->
+    if (!force) {
+        LaunchedEffect(connectionState) {
+            artistsState = when (connectionState) {
+                is MpdConnectionState.Ok      -> viewModel.getArtists()
+                is MpdConnectionState.Error   -> Result.failure(connectionState.err)
+                is MpdConnectionState.Loading -> null
+            }
+        }
+    } else {
+        force = false
+    }
+
+    ConnectionScreen(artistsState, onRetry) { artists ->
         Artists(artists, {
             onClick(artists[it].id)
         }, {
-            scope.launch {
+            viewModel.viewModelScope.launch {
                 viewModel.addToQueue(artists[it].id)
             }
-        }) {
-            scope.launch {
+        }, {
+            viewModel.viewModelScope.launch {
                 viewModel.playNext(artists[it].id)
             }
+        }) {
+            force = true
         }
     }
 }
@@ -433,11 +457,22 @@ fun Artist(name: String, onClick: () -> Unit, onAddToQueue: () -> Unit, onPlayNe
 }
 
 @Composable
-fun AlbumsScreen(onRetry: () -> Unit, onClick: (String) -> Unit, viewModel: AlbumsViewModel = hiltViewModel()) {
-    val albumsState = viewModel.albums.collectAsState()
+fun AlbumsScreen(
+        connectionState: MpdConnectionState<Unit>,
+        onRetry: () -> Unit,
+        onClick: (String) -> Unit,
+        viewModel: AlbumsViewModel = hiltViewModel()) {
+    var albumsState: Result<List<Album>>? by remember { mutableStateOf(null) }
 
-    ConnectionScreen(albumsState.value, onRetry) { albums ->
-        val scope = rememberCoroutineScope()
+    LaunchedEffect(connectionState) {
+        albumsState = when (connectionState) {
+            is MpdConnectionState.Ok      -> viewModel.getAlbums()
+            is MpdConnectionState.Error   -> Result.failure(connectionState.err)
+            is MpdConnectionState.Loading -> null
+        }
+    }
+
+    ConnectionScreen(albumsState, onRetry) { albums ->
         val context = LocalContext.current
         val loader = remember {
             ImageLoader.Builder(context).components {
@@ -451,13 +486,18 @@ fun AlbumsScreen(onRetry: () -> Unit, onClick: (String) -> Unit, viewModel: Albu
                             buf
                         }
                         return Fetcher {
-                            val size = viewModel.getAlbumArt(data.toString(), buf.size, buf)
-                                    ?: throw IllegalStateException()
-                            while (buf.size < size) {
-                                viewModel.getAlbumArt(data.toString(), buf.size, buf) ?: throw IllegalStateException()
+                            withContext(Dispatchers.Default) {
+                                var size = viewModel.getAlbumArt(data.toString(), buf.size, buf).getOrThrow()
+                                while (buf.size < size) {
+                                    val newSize = viewModel.getAlbumArt(data.toString(), buf.size, buf).getOrThrow()
+                                    if (newSize != size) {
+                                        buf.clear()
+                                        size = newSize
+                                    }
+                                }
+                                partials.remove(data)
+                                SourceResult(ImageSource(buf, options.context), null, DataSource.NETWORK)
                             }
-                            partials.remove(data)
-                            SourceResult(ImageSource(buf, options.context), null, DataSource.NETWORK)
                         }
                     }
                 })
@@ -470,11 +510,11 @@ fun AlbumsScreen(onRetry: () -> Unit, onClick: (String) -> Unit, viewModel: Albu
         Albums(albums, loader, {
             onClick(albums[it].id)
         }, {
-            scope.launch {
+            viewModel.viewModelScope.launch {
                 viewModel.addToQueue(albums[it].id)
             }
         }) {
-            scope.launch {
+            viewModel.viewModelScope.launch {
                 viewModel.playNext(albums[it].id)
             }
         }
@@ -517,19 +557,50 @@ fun Album(
         onClick()
     }, supportingContent = {
         SingleLineText(artist)
-    }, leadingContent = art)
+    }, leadingContent = art, trailingContent = {
+        var expanded by remember { mutableStateOf(false) }
+        IconButton(onClick = {
+            expanded = true
+        }) {
+            Icon(Icons.Default.MoreVert, "")
+        }
+
+        DropdownMenu(expanded, { expanded = false }) {
+            DropdownMenuItem({ Text(stringResource(R.string.add_to_queue)) }, {
+                expanded = false
+                onAddToQueue()
+            })
+            DropdownMenuItem({ Text(stringResource(R.string.play_next)) }, {
+                expanded = false
+                onPlayNext()
+            })
+        }
+    })
 }
 
 @Composable
 fun ArtistScreen(
-        id: String,
+        connectionState: MpdConnectionState<Unit>,
         onRetry: () -> Unit,
         setTitle: (String) -> Unit,
         nav: NavController,
         viewModel: ArtistViewModel = hiltViewModel()) {
-    val songs by viewModel.songs.collectAsState()
-    LaunchedEffect(id) {
-        setTitle(viewModel.getName(id) ?: "")
+    var songs: Result<List<Song>>? by remember { mutableStateOf(null) }
+    LaunchedEffect(connectionState) {
+        when (connectionState) {
+            is MpdConnectionState.Ok      -> {
+                songs = viewModel.getSongs()
+                setTitle(viewModel.getName().getOrDefault(""))
+            }
+
+            is MpdConnectionState.Error   -> {
+                songs = Result.failure(connectionState.err)
+            }
+
+            is MpdConnectionState.Loading -> {
+                songs = null
+            }
+        }
     }
 
     ConnectionScreen(songs, onRetry) {
@@ -541,8 +612,11 @@ fun ArtistScreen(
                 }, Modifier.clickable {
                     scope.launch {
                         viewModel.setQueue(it.map {
-                            val metadata = MediaMetadata.Builder().setTitle(it.title).setArtist(it.artist)
-                                    .setAlbumTitle(it.album).build()
+                            val metadata = MediaMetadata.Builder()
+                                    .setTitle(it.title)
+                                    .setArtist(it.artist)
+                                    .setAlbumTitle(it.album)
+                                    .build()
                             Pair(it.file, MediaItem.Builder().setMediaId(it.id).setMediaMetadata(metadata))
                         }, i)
                     }
@@ -556,14 +630,28 @@ fun ArtistScreen(
 
 @Composable
 fun AlbumScreen(
+        connectionState: MpdConnectionState<Unit>,
         id: String,
         onRetry: () -> Unit,
         setTitle: (String) -> Unit,
         nav: NavController,
         viewModel: AlbumViewModel = hiltViewModel()) {
-    val tracks by viewModel.trackList.collectAsState()
-    LaunchedEffect(id) {
-        setTitle(viewModel.getTitle(id) ?: "")
+    var tracks: Result<List<Track>>? by remember { mutableStateOf(null) }
+    LaunchedEffect(connectionState) {
+        when (connectionState) {
+            is MpdConnectionState.Ok      -> {
+                tracks = viewModel.getTracks()
+                setTitle(viewModel.getTitle().getOrDefault(""))
+            }
+
+            is MpdConnectionState.Error   -> {
+                tracks = Result.failure(connectionState.err)
+            }
+
+            is MpdConnectionState.Loading -> {
+                tracks = null
+            }
+        }
     }
 
     ConnectionScreen(tracks, onRetry) {
@@ -583,8 +671,11 @@ fun AlbumScreen(
                 }, Modifier.clickable {
                     scope.launch {
                         viewModel.setQueue(it.map {
-                            val metadata = MediaMetadata.Builder().setTitle(it.title).setArtist(it.artist)
-                                    .setAlbumTitle(it.album).build()
+                            val metadata = MediaMetadata.Builder()
+                                    .setTitle(it.title)
+                                    .setArtist(it.artist)
+                                    .setAlbumTitle(it.album)
+                                    .build()
                             Pair(it.file, MediaItem.Builder().setMediaId(it.id).setMediaMetadata(metadata))
                         }, i)
                     }
@@ -601,12 +692,14 @@ fun AlbumScreen(
 }
 
 @Composable
-fun <T> ConnectionScreen(state: MpdConnectionState<T>, onRetry: () -> Unit, content: @Composable (T) -> Unit) {
-    when (state) {
-        is MpdConnectionState.Error   -> {
+fun <T> ConnectionScreen(state: Result<T>?, onRetry: () -> Unit, content: @Composable (T) -> Unit) {
+    if (state != null) {
+        state.onSuccess {
+            content(it)
+        }.onFailure {
             Box(Modifier.fillMaxSize()) {
                 Column(Modifier.align(Alignment.Center)) {
-                    Text(state.err.message ?: "", Modifier.align(Alignment.CenterHorizontally))
+                    Text(it.message ?: "", Modifier.align(Alignment.CenterHorizontally))
                     Button({
                         onRetry()
                     }, Modifier.align(Alignment.CenterHorizontally)) {
@@ -615,15 +708,9 @@ fun <T> ConnectionScreen(state: MpdConnectionState<T>, onRetry: () -> Unit, cont
                 }
             }
         }
-
-        is MpdConnectionState.Loading -> {
-            Box(Modifier.fillMaxSize()) {
-                CircularProgressIndicator(Modifier.align(Alignment.Center))
-            }
-        }
-
-        is MpdConnectionState.Ok      -> {
-            content(state.res)
+    } else {
+        Box(Modifier.fillMaxSize()) {
+            CircularProgressIndicator(Modifier.align(Alignment.Center))
         }
     }
 }

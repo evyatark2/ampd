@@ -9,8 +9,7 @@ message Settings {
   enum TabType {
     TAB_TYPE_ARTISTS = 0;
     TAB_TYPE_ALBUMS = 1;
-    TAB_TYPE_SONGS = 2;
-    TAB_TYPE_GENRES = 3;
+    TAB_TYPE_GENRES = 2;
   }
 
   message Tab {

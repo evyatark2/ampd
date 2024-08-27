@@ -19,9 +19,8 @@ class MediaControllerWrapper @Inject constructor(@ApplicationContext private val
     lateinit var mediaController: MediaController
 
     fun init(): ListenableFuture<MediaController> {
-        val fut = MediaController
-                .Builder(context, SessionToken(context, ComponentName(context, PlaybackService::class.java)))
-                .buildAsync()
+        val fut = MediaController.Builder(context,
+                        SessionToken(context, ComponentName(context, PlaybackService::class.java))).buildAsync()
         fut.addListener({
             mediaController = fut.get()
         }, context.mainExecutor)

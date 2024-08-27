@@ -6,7 +6,7 @@ import javax.inject.Singleton
 
 @Singleton
 class TracksRepository @Inject constructor(private val mpd: MpdRemoteDataSource) {
-    fun getSongsForArtist(id: String) = mpd.fetchArtistSongs(id)
+    suspend fun getSongsForArtist(id: String) = mpd.fetchArtistSongs(id)
 
-    fun getTracksForAlbum(id: String) = mpd.fetchAlbumTracks(id)
+    suspend fun getTracksForAlbum(id: String) = mpd.fetchAlbumTracks(id)
 }

@@ -31,7 +31,7 @@ class MainViewModel @Inject constructor(
     val queue = player.queue.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
     val duration = player.duration.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0)
 
-    suspend fun connect(addr: SocketAddress?, tls: Boolean) {
+    suspend fun connect(addr: SocketAddress, tls: Boolean) {
         mpd.connect(addr, tls)
     }
 

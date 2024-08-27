@@ -93,7 +93,7 @@ class MpdClient private constructor(
 
     private suspend fun read_response(req: MpdRequest, end: String): MpdResponse {
         return when (req) {
-            is MpdRequest.MpdFindRequest -> {
+            is MpdRequest.MpdFindRequest     -> {
                 var file: String
 
                 val line = source.readUTF8Line() ?: throw EOFException()
@@ -134,7 +134,7 @@ class MpdClient private constructor(
                 MpdResponse.MpdFindResponse(list)
             }
 
-            is MpdRequest.MpdListRequest -> {
+            is MpdRequest.MpdListRequest     -> {
                 val nodeStack = ArrayDeque<Pair<MpdTag, MutableList<MpdGroupNode>>>(req.groups.size)
                 val stack = ArrayDeque<String>(req.groups.size)
                 while (true) {
@@ -181,7 +181,7 @@ class MpdClient private constructor(
                 MpdResponse.MpdAlbumArtResponse(size, binary)
             }
 
-            else -> {
+            else                             -> {
                 throw IllegalArgumentException()
             }
         }
