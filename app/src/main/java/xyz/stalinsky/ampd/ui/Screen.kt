@@ -189,12 +189,11 @@ fun Main(viewModel: MainViewModel = hiltViewModel()) {
             }
 
             composable("artist/{id}", listOf(navArgument("id") { type = NavType.StringType })) {
-                ArtistScreen(connectionState, { force = true }, { innerTitle = it }, navController)
+                ArtistScreen(connectionState, { force = true }, { innerTitle = it })
             }
 
             composable("album/{id}", listOf(navArgument("id") { type = NavType.StringType })) {
-                val id = it.arguments!!.getString("id")
-                AlbumScreen(connectionState, id!!, { force = true }, { innerTitle = it }, navController)
+                AlbumScreen(connectionState, { force = true }, { innerTitle = it })
             }
         }
     }
@@ -211,8 +210,6 @@ fun MainScreen(
     val defaultTab by viewModel.defaultTab.collectAsState()
 
     Column(Modifier) {
-        val scope = rememberCoroutineScope()
-
         val pagerState = key(defaultTab) {
             rememberPagerState(initialPage = defaultTab) {
                 tabs.size
@@ -224,19 +221,19 @@ fun MainScreen(
                 if (tab.enabled) {
                     when (tab.type) {
                         Settings.TabType.TAB_TYPE_ARTISTS -> Tab(selected = i == pagerState.currentPage, onClick = {
-                            scope.launch {
+                            viewModel.viewModelScope.launch {
                                 pagerState.animateScrollToPage(i)
                             }
                         }, text = { Text(stringResource(R.string.artists)) })
 
                         Settings.TabType.TAB_TYPE_ALBUMS  -> Tab(selected = i == pagerState.currentPage, onClick = {
-                            scope.launch {
+                            viewModel.viewModelScope.launch {
                                 pagerState.animateScrollToPage(i)
                             }
                         }, text = { Text(stringResource(R.string.albums)) })
 
                         Settings.TabType.TAB_TYPE_GENRES  -> Tab(selected = i == pagerState.currentPage, onClick = {
-                            scope.launch {
+                            viewModel.viewModelScope.launch {
                                 pagerState.animateScrollToPage(i)
                             }
                         }, text = { Text(stringResource(R.string.genres)) })
@@ -284,7 +281,6 @@ fun SettingsScreen(nav: NavController, viewModel: SettingsViewModel = hiltViewMo
     Column {
         var showDialog by remember { mutableStateOf(false) }
         var dialog by remember { mutableStateOf(Dialog.LIBRARY_HOST_DIALOG) }
-        val scope = rememberCoroutineScope()
 
         val libraryHost by viewModel.libraryHost.collectAsState()
         val libraryPort by viewModel.libraryPort.collectAsState()
@@ -303,7 +299,7 @@ fun SettingsScreen(nav: NavController, viewModel: SettingsViewModel = hiltViewMo
             }
 
             Dialog(onDismissRequest = {
-                scope.launch {
+                viewModel.viewModelScope.launch {
                     when (dialog) {
                         Dialog.LIBRARY_HOST_DIALOG -> viewModel.setLibraryHost(value)
                         Dialog.LIBRARY_PORT_DIALOG -> viewModel.setLibraryPort(value.toInt())
@@ -337,7 +333,7 @@ fun SettingsScreen(nav: NavController, viewModel: SettingsViewModel = hiltViewMo
             Text(stringResource(R.string.use_tls_with_mpd))
         }, trailingContent = {
             Checkbox(checked = mpdTls, onCheckedChange = {
-                scope.launch {
+                viewModel.viewModelScope.launch {
                     viewModel.toggleMpdTls()
                 }
             })
@@ -356,19 +352,18 @@ fun SettingsScreen(nav: NavController, viewModel: SettingsViewModel = hiltViewMo
 @Composable
 fun TabsSettingScreen(viewModel: TabsSettingViewModel = hiltViewModel()) {
     Column {
-        val scope = rememberCoroutineScope()
         val tabs by viewModel.tabs.collectAsState()
         val defaultTab by viewModel.defaultTab.collectAsState()
         tabs.forEachIndexed { i, tab ->
             ListItem({ Text(tab.type.name) }, leadingContent = {
                 Checkbox(checked = tab.enabled, onCheckedChange = {
-                    scope.launch {
+                    viewModel.viewModelScope.launch {
                         viewModel.toggleTab(i)
                     }
                 })
             }, trailingContent = {
                 RadioButton(selected = i == defaultTab, onClick = {
-                    scope.launch {
+                    viewModel.viewModelScope.launch {
                         viewModel.setDefaultTab(i)
                     }
                 })
@@ -636,7 +631,6 @@ fun ArtistScreen(
         connectionState: MpdConnectionState<Unit>,
         onRetry: () -> Unit,
         setTitle: (String) -> Unit,
-        nav: NavController,
         viewModel: ArtistViewModel = hiltViewModel()) {
     var songs: Result<List<Song>>? by remember { mutableStateOf(null) }
     LaunchedEffect(connectionState) {
@@ -657,13 +651,12 @@ fun ArtistScreen(
     }
 
     ConnectionScreen(songs, onRetry) {
-        val scope = rememberCoroutineScope()
         LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(0.dp, 8.dp)) {
             itemsIndexed(it) { i, song ->
                 ListItem({
                     SingleLineText(song.title)
                 }, Modifier.clickable {
-                    scope.launch {
+                    viewModel.viewModelScope.launch {
                         viewModel.setQueue(it.map {
                             val metadata = MediaMetadata.Builder()
                                     .setTitle(it.title)
@@ -684,10 +677,8 @@ fun ArtistScreen(
 @Composable
 fun AlbumScreen(
         connectionState: MpdConnectionState<Unit>,
-        id: String,
         onRetry: () -> Unit,
         setTitle: (String) -> Unit,
-        nav: NavController,
         viewModel: AlbumViewModel = hiltViewModel()) {
     var tracks: Result<List<Track>>? by remember { mutableStateOf(null) }
     LaunchedEffect(connectionState) {
@@ -708,7 +699,6 @@ fun AlbumScreen(
     }
 
     ConnectionScreen(tracks, onRetry) {
-        val scope = rememberCoroutineScope()
         LazyColumn(Modifier.fillMaxSize(1f), contentPadding = PaddingValues(0.dp, 8.dp)) {
             var multiside = false
             for (track in it) {
@@ -722,7 +712,7 @@ fun AlbumScreen(
                 ListItem({
                     SingleLineText(track.title)
                 }, Modifier.clickable {
-                    scope.launch {
+                    viewModel.viewModelScope.launch {
                         viewModel.setQueue(it.map {
                             val metadata = MediaMetadata.Builder()
                                     .setTitle(it.title)
