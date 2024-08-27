@@ -414,18 +414,37 @@ fun ArtistsScreen(
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun Artists(artists: List<Artist>, onClick: (Int) -> Unit, onAddToQueue: (Int) -> Unit, onPlayNext: (Int) -> Unit) {
-    LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(0.dp, 8.dp)) {
-        itemsIndexed(artists) { i, artist ->
-            Artist(artist.name, {
-                onClick(i)
-            }, {
-                onAddToQueue(i)
-            }) {
-                onPlayNext(i)
+fun Artists(
+        artists: List<Artist>,
+        onClick: (Int) -> Unit,
+        onAddToQueue: (Int) -> Unit,
+        onPlayNext: (Int) -> Unit,
+        onRefresh: () -> Unit) {
+    val state = rememberPullToRefreshState()
+    if (state.isRefreshing) {
+        onRefresh()
+        state.endRefresh()
+    }
+    Box(Modifier
+            .fillMaxSize()
+            .nestedScroll(state.nestedScrollConnection)
+            .clipToBounds()) {
+        LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(0.dp, 8.dp)) {
+            if (!state.isRefreshing) {
+                itemsIndexed(artists) { i, artist ->
+                    Artist(artist.name, {
+                        onClick(i)
+                    }, {
+                        onAddToQueue(i)
+                    }) {
+                        onPlayNext(i)
+                    }
+                }
             }
         }
+        PullToRefreshContainer(state, Modifier.align(Alignment.TopCenter))
     }
 }
 
@@ -464,12 +483,18 @@ fun AlbumsScreen(
         viewModel: AlbumsViewModel = hiltViewModel()) {
     var albumsState: Result<List<Album>>? by remember { mutableStateOf(null) }
 
-    LaunchedEffect(connectionState) {
-        albumsState = when (connectionState) {
-            is MpdConnectionState.Ok      -> viewModel.getAlbums()
-            is MpdConnectionState.Error   -> Result.failure(connectionState.err)
-            is MpdConnectionState.Loading -> null
+    var force by remember { mutableStateOf(false) }
+
+    if (!force) {
+        LaunchedEffect(connectionState) {
+            albumsState = when (connectionState) {
+                is MpdConnectionState.Ok      -> viewModel.getAlbums()
+                is MpdConnectionState.Error   -> Result.failure(connectionState.err)
+                is MpdConnectionState.Loading -> null
+            }
         }
+    } else {
+        force = false
     }
 
     ConnectionScreen(albumsState, onRetry) { albums ->
@@ -513,33 +538,48 @@ fun AlbumsScreen(
             viewModel.viewModelScope.launch {
                 viewModel.addToQueue(albums[it].id)
             }
-        }) {
+        }, {
             viewModel.viewModelScope.launch {
                 viewModel.playNext(albums[it].id)
             }
+        }) {
+            force = true
         }
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun Albums(
         albums: List<Album>,
         loader: ImageLoader,
         onClick: (Int) -> Unit,
         onAddToQueue: (Int) -> Unit,
-        onPlayNext: (Int) -> Unit) {
-    LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(0.dp, 8.dp)) {
-        itemsIndexed(albums) { i, album ->
-            Album({
-                AsyncImage(album.art, "", loader, Modifier.size(56.dp))
-            }, album.title, album.artist, {
-                onClick(i)
-            }, {
-                onAddToQueue(i)
-            }) {
-                onPlayNext(i)
+        onPlayNext: (Int) -> Unit,
+        onRefresh: () -> Unit) {
+    val state = rememberPullToRefreshState()
+    if (state.isRefreshing) {
+        onRefresh()
+        state.endRefresh()
+    }
+    Box(Modifier
+            .fillMaxSize()
+            .nestedScroll(state.nestedScrollConnection)
+            .clipToBounds()) {
+        LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(0.dp, 8.dp)) {
+            itemsIndexed(albums) { i, album ->
+                Album({
+                    AsyncImage(album.art, "", loader, Modifier.size(56.dp))
+                }, album.title, album.artist, {
+                    onClick(i)
+                }, {
+                    onAddToQueue(i)
+                }) {
+                    onPlayNext(i)
+                }
             }
         }
+        PullToRefreshContainer(state, Modifier.align(Alignment.TopCenter))
     }
 }
 
