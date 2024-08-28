@@ -91,7 +91,10 @@ import xyz.stalinsky.ampd.ui.viewmodel.AlbumViewModel
 import xyz.stalinsky.ampd.ui.viewmodel.AlbumsViewModel
 import xyz.stalinsky.ampd.ui.viewmodel.ArtistViewModel
 import xyz.stalinsky.ampd.ui.viewmodel.ArtistsViewModel
+import xyz.stalinsky.ampd.ui.viewmodel.GenresViewModel
 import xyz.stalinsky.ampd.ui.viewmodel.MainViewModel
+import xyz.stalinsky.ampd.ui.viewmodel.SettingsViewModel
+import xyz.stalinsky.ampd.ui.viewmodel.TabsSettingViewModel
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -195,6 +198,10 @@ fun Main(viewModel: MainViewModel = hiltViewModel()) {
             composable("album/{id}", listOf(navArgument("id") { type = NavType.StringType })) {
                 AlbumScreen(connectionState, { force = true }, { innerTitle = it })
             }
+
+            composable("genre/{id}", listOf(navArgument("id") { type = NavType.StringType })) {
+                //GenreScreen(connectionState, { force = true }, { innerTitle = it })
+            }
         }
     }
 }
@@ -209,65 +216,68 @@ fun MainScreen(
     val tabs by viewModel.tabs.collectAsState()
     val defaultTab by viewModel.defaultTab.collectAsState()
 
+    val enabledTabs = remember(tabs) {
+        tabs.filter { it.enabled }
+    }
+
     Column(Modifier) {
         val pagerState = key(defaultTab) {
             rememberPagerState(initialPage = defaultTab) {
-                tabs.size
+                enabledTabs.size
             }
         }
 
         TabRow(selectedTabIndex = pagerState.currentPage) {
             val scope = rememberCoroutineScope()
-            tabs.forEachIndexed { i, tab ->
-                if (tab.enabled) {
-                    when (tab.type) {
-                        Settings.TabType.TAB_TYPE_ARTISTS -> Tab(selected = i == pagerState.currentPage, onClick = {
-                            scope.launch {
-                                pagerState.animateScrollToPage(i)
-                            }
-                        }, text = { Text(stringResource(R.string.artists)) })
+            enabledTabs.forEachIndexed { i, tab ->
+                when (tab.type!!) {
+                    Settings.TabType.TAB_TYPE_ARTISTS -> Tab(selected = i == pagerState.currentPage, onClick = {
+                        scope.launch {
+                            pagerState.animateScrollToPage(i)
+                        }
+                    }, text = { Text(stringResource(R.string.artists)) })
 
-                        Settings.TabType.TAB_TYPE_ALBUMS  -> Tab(selected = i == pagerState.currentPage, onClick = {
-                            scope.launch {
-                                pagerState.animateScrollToPage(i)
-                            }
-                        }, text = { Text(stringResource(R.string.albums)) })
+                    Settings.TabType.TAB_TYPE_ALBUMS  -> Tab(selected = i == pagerState.currentPage, onClick = {
+                        scope.launch {
+                            pagerState.animateScrollToPage(i)
+                        }
+                    }, text = { Text(stringResource(R.string.albums)) })
 
-                        Settings.TabType.TAB_TYPE_GENRES  -> Tab(selected = i == pagerState.currentPage, onClick = {
-                            scope.launch {
-                                pagerState.animateScrollToPage(i)
-                            }
-                        }, text = { Text(stringResource(R.string.genres)) })
+                    Settings.TabType.TAB_TYPE_GENRES  -> Tab(selected = i == pagerState.currentPage, onClick = {
+                        scope.launch {
+                            pagerState.animateScrollToPage(i)
+                        }
+                    }, text = { Text(stringResource(R.string.genres)) })
 
-                        Settings.TabType.UNRECOGNIZED     -> TODO()
-                        null                              -> TODO()
-                    }
+                    Settings.TabType.UNRECOGNIZED     -> TODO()
                 }
             }
         }
 
         HorizontalPager(pagerState, Modifier.fillMaxSize()) {
-            val tab = tabs[it]
-            if (tab.enabled) {
-                when (tab.type) {
-                    Settings.TabType.TAB_TYPE_ARTISTS -> {
-                        ArtistsScreen(connectionState, onRetry, {
-                            nav.navigate("artist/${it}")
-                        })
-                    }
-
-                    Settings.TabType.TAB_TYPE_ALBUMS  -> {
-                        AlbumsScreen(connectionState, onRetry, {
-                            nav.navigate("album/${it}")
-                        }, {
-                            nav.navigate("artist/${it}")
-                        })
-                    }
-
-                    Settings.TabType.TAB_TYPE_GENRES  -> TODO()
-                    Settings.TabType.UNRECOGNIZED     -> TODO()
-                    null                              -> TODO()
+            val tab = enabledTabs[it]
+            when (tab.type) {
+                Settings.TabType.TAB_TYPE_ARTISTS -> {
+                    ArtistsScreen(connectionState, onRetry, {
+                        nav.navigate("artist/${it}")
+                    })
                 }
+
+                Settings.TabType.TAB_TYPE_ALBUMS  -> {
+                    AlbumsScreen(connectionState, onRetry, {
+                        nav.navigate("album/${it}")
+                    }, {
+                        nav.navigate("artist/${it}")
+                    })
+                }
+
+                Settings.TabType.TAB_TYPE_GENRES  -> {
+                    GenresScreen(connectionState, onRetry, {
+                        nav.navigate("genre/${it}")
+                    })
+                }
+                Settings.TabType.UNRECOGNIZED     -> TODO()
+                null                              -> TODO()
             }
         }
     }
@@ -622,6 +632,108 @@ fun Album(
             DropdownMenuItem({ Text(stringResource(R.string.go_to_artist)) }, {
                 expanded = false
                 onGoToArtist()
+            })
+        }
+    })
+}
+
+@Composable
+fun GenresScreen(
+        connectionState: MpdConnectionState<Unit>,
+        onRetry: () -> Unit,
+        onClick: (String) -> Unit,
+        viewModel: GenresViewModel = hiltViewModel()) {
+    var genresState: Result<List<String>>? by remember { mutableStateOf(null) }
+
+    var force by remember { mutableStateOf(false) }
+
+    if (!force) {
+        LaunchedEffect(connectionState) {
+            genresState = when (connectionState) {
+                is MpdConnectionState.Ok      -> viewModel.getGenres()
+                is MpdConnectionState.Error   -> Result.failure(connectionState.err)
+                is MpdConnectionState.Loading -> null
+            }
+        }
+    } else {
+        force = false
+    }
+
+    ConnectionScreen(genresState, onRetry) { genres ->
+        Genres(genres, {
+            onClick(genres[it])
+        }, {
+            viewModel.viewModelScope.launch {
+                viewModel.addToQueue(genres[it])
+            }
+        }, {
+            viewModel.viewModelScope.launch {
+                viewModel.playNext(genres[it])
+            }
+        }) {
+            force = true
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun Genres(
+        genres: List<String>,
+        onClick: (Int) -> Unit,
+        onAddToQueue: (Int) -> Unit,
+        onPlayNext: (Int) -> Unit,
+        onRefresh: () -> Unit) {
+    val state = rememberPullToRefreshState()
+    if (state.isRefreshing) {
+        onRefresh()
+        state.endRefresh()
+    }
+    Box(Modifier
+            .fillMaxSize()
+            .nestedScroll(state.nestedScrollConnection)
+            .clipToBounds()) {
+        LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(0.dp, 8.dp)) {
+            itemsIndexed(genres) { i, genre ->
+                Genre(genre, {
+                    onClick(i)
+                }, {
+                    onAddToQueue(i)
+                }, {
+                    onPlayNext(i)
+                })
+            }
+        }
+        PullToRefreshContainer(state, Modifier.align(Alignment.TopCenter))
+    }
+}
+
+@Composable
+fun Genre(
+        title: String,
+        onClick: () -> Unit,
+        onAddToQueue: () -> Unit,
+        onPlayNext: () -> Unit) {
+    ListItem({
+        SingleLineText(title)
+    }, Modifier.clickable {
+        onClick()
+    }, trailingContent = {
+        var expanded by remember { mutableStateOf(false) }
+        IconButton(onClick = {
+            expanded = true
+        }) {
+            Icon(Icons.Default.MoreVert, "")
+        }
+
+        DropdownMenu(expanded, { expanded = false }) {
+            DropdownMenuItem({ Text(stringResource(R.string.add_to_queue)) }, {
+                expanded = false
+                onAddToQueue()
+            })
+            DropdownMenuItem({ Text(stringResource(R.string.play_next)) }, {
+                expanded = false
+                onPlayNext()
             })
         }
     })

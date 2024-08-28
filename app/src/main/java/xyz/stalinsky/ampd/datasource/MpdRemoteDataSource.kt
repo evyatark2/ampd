@@ -222,6 +222,32 @@ class MpdRemoteDataSource @Inject constructor() {
         }
     }
 
+    suspend fun fetchGenres(): Result<List<String>> {
+        val res = request(MpdRequest.MpdListRequest(MpdTag.Genre))
+
+        return res.map {
+            (it as MpdResponse.MpdListResponse).data.map {
+                (it as MpdGroupNode.Leaf).data
+            }
+        }
+    }
+
+    suspend fun fetchGenreSongs(genre: String): Result<List<Song>> {
+        val res = request(MpdRequest.MpdFindRequest(MpdFilter.Equal(MpdTag.Genre, genre), null))
+
+        return res.map {
+            (it as MpdResponse.MpdFindResponse).data.map {
+                Song(it.tags[MpdTag.MUSICBRAINZ_TRACKID] ?: "",
+                        it.file,
+                        it.tags[MpdTag.Title] ?: "",
+                        it.tags[MpdTag.MUSICBRAINZ_ALBUMID] ?: "",
+                        it.tags[MpdTag.Album] ?: "",
+                        it.tags[MpdTag.MUSICBRAINZ_ARTISTID] ?: "",
+                        it.tags[MpdTag.Artist] ?: "")
+            }
+        }
+    }
+
     private sealed interface Request {
         class Fetch(val req: MpdRequest, val res: SendChannel<MpdResponse?>) : Request
         class Subscribe(val req: MpdRequest, val res: SendChannel<Result<MpdResponse>?>) : Request

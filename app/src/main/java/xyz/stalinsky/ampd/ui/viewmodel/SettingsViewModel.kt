@@ -1,4 +1,4 @@
-package xyz.stalinsky.ampd.ui
+package xyz.stalinsky.ampd.ui.viewmodel
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope

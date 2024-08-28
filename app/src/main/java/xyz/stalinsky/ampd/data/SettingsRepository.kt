@@ -5,7 +5,6 @@ import androidx.datastore.core.CorruptionException
 import androidx.datastore.core.DataStore
 import androidx.datastore.core.DataStoreFactory
 import androidx.datastore.core.Serializer
-import androidx.datastore.dataStore
 import androidx.datastore.dataStoreFile
 import com.google.protobuf.InvalidProtocolBufferException
 import dagger.Module
@@ -24,9 +23,6 @@ import javax.inject.Singleton
 
 private const val SETTINGS_NAME = "settings"
 private const val DATA_STORE_FILE_NAME = "settings.pb"
-
-val Context.settingsStore: DataStore<Settings> by dataStore(fileName = DATA_STORE_FILE_NAME,
-        serializer = SettingsSerializer)
 
 @InstallIn(SingletonComponent::class)
 @Module
@@ -47,6 +43,9 @@ object SettingsSerializer : Serializer<Settings> {
         }, SettingsKt.tab {
             enabled = true
             type = Settings.TabType.TAB_TYPE_ALBUMS
+        }, SettingsKt.tab {
+            enabled = false
+            type = Settings.TabType.TAB_TYPE_GENRES
         }))
     }
 
