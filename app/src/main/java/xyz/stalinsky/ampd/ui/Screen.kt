@@ -34,7 +34,7 @@ import androidx.compose.material3.TabRow
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextField
 import androidx.compose.material3.TopAppBar
-import androidx.compose.material3.pulltorefresh.PullToRefreshContainer
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -391,9 +391,9 @@ fun ArtistsScreen(
         viewModel: ArtistsViewModel = hiltViewModel()) {
     var artistsState: Result<List<Artist>>? by remember { mutableStateOf(null) }
 
-    var force by remember { mutableStateOf(false) }
+    var isRefreshing by remember { mutableStateOf(false) }
 
-    if (!force) {
+    if (!isRefreshing) {
         LaunchedEffect(connectionState) {
             artistsState = when (connectionState) {
                 is MpdConnectionState.Ok      -> viewModel.getArtists()
@@ -402,7 +402,7 @@ fun ArtistsScreen(
             }
         }
     } else {
-        force = false
+        isRefreshing = false
     }
 
     ConnectionScreen(artistsState, onRetry) { artists ->
@@ -416,8 +416,8 @@ fun ArtistsScreen(
             viewModel.viewModelScope.launch {
                 viewModel.playNext(artists[it].id)
             }
-        }) {
-            force = true
+        }, isRefreshing) {
+            isRefreshing = true
         }
     }
 }
@@ -429,18 +429,12 @@ fun Artists(
         onClick: (Int) -> Unit,
         onAddToQueue: (Int) -> Unit,
         onPlayNext: (Int) -> Unit,
+        isRefreshing: Boolean,
         onRefresh: () -> Unit) {
-    val state = rememberPullToRefreshState()
-    if (state.isRefreshing) {
-        onRefresh()
-        state.endRefresh()
-    }
-    Box(Modifier
+    PullToRefreshBox(isRefreshing, onRefresh, Modifier
             .fillMaxSize()
-            .nestedScroll(state.nestedScrollConnection)
             .clipToBounds()) {
         LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(0.dp, 8.dp)) {
-            if (!state.isRefreshing) {
                 itemsIndexed(artists) { i, artist ->
                     Artist(artist.name, {
                         onClick(i)
@@ -450,9 +444,7 @@ fun Artists(
                         onPlayNext(i)
                     }
                 }
-            }
         }
-        PullToRefreshContainer(state, Modifier.align(Alignment.TopCenter))
     }
 }
 
@@ -492,9 +484,9 @@ fun AlbumsScreen(
         viewModel: AlbumsViewModel = hiltViewModel()) {
     var albumsState: Result<List<Album>>? by remember { mutableStateOf(null) }
 
-    var force by remember { mutableStateOf(false) }
+    var isRefreshing by remember { mutableStateOf(false) }
 
-    if (!force) {
+    if (!isRefreshing) {
         LaunchedEffect(connectionState) {
             albumsState = when (connectionState) {
                 is MpdConnectionState.Ok      -> viewModel.getAlbums()
@@ -503,7 +495,7 @@ fun AlbumsScreen(
             }
         }
     } else {
-        force = false
+        isRefreshing = false
     }
 
     ConnectionScreen(albumsState, onRetry) { albums ->
@@ -553,8 +545,8 @@ fun AlbumsScreen(
             }
         }, {
             onGoToArtist(albums[it].artistId)
-        }) {
-            force = true
+        }, isRefreshing) {
+            isRefreshing = true
         }
     }
 }
@@ -568,15 +560,10 @@ fun Albums(
         onAddToQueue: (Int) -> Unit,
         onPlayNext: (Int) -> Unit,
         onGoToArtist: (Int) -> Unit,
+        isRefreshing: Boolean,
         onRefresh: () -> Unit) {
-    val state = rememberPullToRefreshState()
-    if (state.isRefreshing) {
-        onRefresh()
-        state.endRefresh()
-    }
-    Box(Modifier
+    PullToRefreshBox(isRefreshing, onRefresh, Modifier
             .fillMaxSize()
-            .nestedScroll(state.nestedScrollConnection)
             .clipToBounds()) {
         LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(0.dp, 8.dp)) {
             itemsIndexed(albums) { i, album ->
@@ -593,7 +580,6 @@ fun Albums(
                 }
             }
         }
-        PullToRefreshContainer(state, Modifier.align(Alignment.TopCenter))
     }
 }
 
@@ -645,9 +631,9 @@ fun GenresScreen(
         viewModel: GenresViewModel = hiltViewModel()) {
     var genresState: Result<List<String>>? by remember { mutableStateOf(null) }
 
-    var force by remember { mutableStateOf(false) }
+    var isRefreshing by remember { mutableStateOf(false) }
 
-    if (!force) {
+    if (!isRefreshing) {
         LaunchedEffect(connectionState) {
             genresState = when (connectionState) {
                 is MpdConnectionState.Ok      -> viewModel.getGenres()
@@ -656,7 +642,7 @@ fun GenresScreen(
             }
         }
     } else {
-        force = false
+        isRefreshing = false
     }
 
     ConnectionScreen(genresState, onRetry) { genres ->
@@ -670,8 +656,8 @@ fun GenresScreen(
             viewModel.viewModelScope.launch {
                 viewModel.playNext(genres[it])
             }
-        }) {
-            force = true
+        }, isRefreshing) {
+            isRefreshing = true
         }
     }
 }
@@ -683,15 +669,10 @@ fun Genres(
         onClick: (Int) -> Unit,
         onAddToQueue: (Int) -> Unit,
         onPlayNext: (Int) -> Unit,
+        isRefreshing: Boolean,
         onRefresh: () -> Unit) {
-    val state = rememberPullToRefreshState()
-    if (state.isRefreshing) {
-        onRefresh()
-        state.endRefresh()
-    }
-    Box(Modifier
+    PullToRefreshBox(isRefreshing, onRefresh,                                                                                                                                               Modifier
             .fillMaxSize()
-            .nestedScroll(state.nestedScrollConnection)
             .clipToBounds()) {
         LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(0.dp, 8.dp)) {
             itemsIndexed(genres) { i, genre ->
@@ -704,7 +685,6 @@ fun Genres(
                 })
             }
         }
-        PullToRefreshContainer(state, Modifier.align(Alignment.TopCenter))
     }
 }
 

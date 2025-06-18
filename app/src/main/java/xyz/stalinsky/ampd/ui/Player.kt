@@ -327,6 +327,6 @@ fun rememberPlayerState(): PlayerState {
         false at 0f
     }
     return remember {
-        PlayerState(AnchoredDraggableState(false, anchors, { it / 2 }, { 0f }, tween()), mutableStateOf(false))
+        PlayerState(AnchoredDraggableState(false, anchors), mutableStateOf(false))
     }
 }
