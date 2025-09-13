@@ -11,6 +11,7 @@ import xyz.stalinsky.ampd.data.PlayerRepository
 import xyz.stalinsky.ampd.data.SettingsRepository
 import xyz.stalinsky.ampd.data.TracksRepository
 import javax.inject.Inject
+import androidx.core.net.toUri
 
 @HiltViewModel
 class ArtistViewModel @Inject constructor(
@@ -26,7 +27,7 @@ class ArtistViewModel @Inject constructor(
 
     suspend fun setQueue(items: List<Pair<String, MediaItem.Builder>>, i: Int) {
         player.setQueue(items.map {
-            it.second.setUri(Uri.parse("${settings.libraryHost.first()}/${it.first}")).build()
+            it.second.setUri("${settings.libraryHost.first()}/${it.first}".toUri()).build()
         }, i)
     }
 

@@ -43,34 +43,49 @@ class PlayerRepository @Inject constructor(private val controller: MediaControll
     val queue = callbackFlow {
         MediaItem.fromUri("")
         val listener = object : Player.Listener {
+            var currentItem = -1
+            var queue: List<MediaItem>? = null
+
             override fun onTimelineChanged(timeline: Timeline, reason: Int) {
                 val list = mutableListOf<MediaItem>()
+
                 for (i in 0..<timeline.windowCount) {
                     val win = Timeline.Window()
                     timeline.getWindow(i, win)
                     list.add(win.mediaItem)
                 }
-                trySend(list.toList())
+
+                if (list.isEmpty()) {
+                    queue = null
+                } else {
+                    queue = list.toList()
+                    currentItem = controller.currentMediaItemIndex
+                }
+                send()
             }
-        }
 
-        controller.addListener(listener)
-
-        awaitClose {
-            controller.removeListener(listener)
-        }
-    }
-
-    val currentItem = callbackFlow {
-        val listener = object : Player.Listener {
             override fun onPositionDiscontinuity(old: Player.PositionInfo, new: Player.PositionInfo, reason: Int) {
-                if (old.mediaItemIndex != new.mediaItemIndex) trySend(new.mediaItemIndex)
+                if (old.mediaItemIndex != new.mediaItemIndex) {
+                    currentItem = new.mediaItemIndex
+                    send()
+                }
             }
 
             override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
                 if (mediaItem != null) {
-                    trySend(controller.currentMediaItemIndex)
+                    currentItem = controller.currentMediaItemIndex
+                } else {
+                    queue = null
                 }
+                send()
+            }
+
+            private fun send() {
+                val q = queue
+                if (q == null)
+                    trySend(null)
+                else
+                    trySend(Pair(q, currentItem))
             }
         }
 
@@ -144,6 +159,11 @@ class PlayerRepository @Inject constructor(private val controller: MediaControll
         controller.seekTo(i, 0)
         controller.playWhenReady = true
         controller.prepare()
+    }
+
+    fun clearQueue() {
+        controller.stop()
+        controller.clearMediaItems()
     }
 
     fun addToQueue(items: List<MediaItem>) {

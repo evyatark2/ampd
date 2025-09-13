@@ -1,19 +1,29 @@
 package xyz.stalinsky.ampd.ui
 
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.InternalAnimationApi
 import androidx.compose.animation.core.VectorConverter
 import androidx.compose.animation.core.createDeferredAnimation
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.core.updateTransition
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.layout.Layout
+import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import kotlin.math.roundToInt
 
@@ -25,45 +35,32 @@ class PlayerSheetScaffoldState(
 @OptIn(ExperimentalFoundationApi::class, InternalAnimationApi::class)
 @Composable
 fun PlayerSheetScaffold(
-        state: PlayerSheetScaffoldState,
         modifier: Modifier = Modifier,
         sheetVisible: Boolean,
-        sheetContent: @Composable () -> Unit,
+        sheetContent: @Composable (PaddingValues) -> Unit,
         topBarContent: @Composable () -> Unit,
-        content: @Composable () -> Unit) {
-    val showTransition = updateTransition(sheetVisible, label = "")
-    val deferred = showTransition.createDeferredAnimation(Float.VectorConverter)
+        content: @Composable (PaddingValues) -> Unit) {
+    Scaffold(modifier, topBarContent) {
+        Box(Modifier.fillMaxSize()) {
+            content(object : PaddingValues {
+                override fun calculateLeftPadding(layoutDirection: LayoutDirection) =
+                        it.calculateLeftPadding(layoutDirection)
 
-    Layout({
-        Column {
-            topBarContent()
-            content()
-        }
-        Box {
-            sheetContent()
-        }
-    }, modifier) { measurables, c ->
-        val sheetPlaceable = measurables[1].measure(c.copy(minHeight = 0, minWidth = 0))
+                override fun calculateTopPadding() = it.calculateTopPadding()
 
-        val showOffset by deferred.animate({ tween() }) {
-            if (it) {
-                1f
-            } else {
-                0f
-            }
-        }
+                override fun calculateRightPadding(layoutDirection: LayoutDirection) =
+                        it.calculateRightPadding(layoutDirection)
 
-        val placeable = measurables[0].measure(c.copy(minWidth = 0,
-                minHeight = 0,
-                maxHeight = c.maxHeight - (72.dp.toPx() * showOffset).toInt()))
+                override fun calculateBottomPadding() = if (sheetVisible) {
+                    it.calculateBottomPadding() + 72.dp
+                } else {
+                    it.calculateBottomPadding()
+                }
 
-        layout(c.maxWidth, c.maxHeight) {
-            placeable.placeRelative(0, 0)
-            if (state.playerState.drag.currentValue && state.playerState.drag.targetValue) {
-                sheetPlaceable.placeRelative(0, c.maxHeight - (sheetPlaceable.height * showOffset).toInt())
-            } else {
-                sheetPlaceable.placeRelative(0,
-                        c.maxHeight - (72.dp.toPx() * showOffset).toInt() + state.playerState.drag.offset.roundToInt())
+            })
+            AnimatedVisibility(sheetVisible, Modifier.align(Alignment.BottomCenter), slideInVertically { it },
+                    slideOutVertically { it }) {
+                sheetContent(it)
             }
         }
     }

@@ -27,7 +27,6 @@ class MainViewModel @Inject constructor(
 
     val loading = player.isLoading.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), true)
     val playing = player.isPlaying.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
-    val currentItem = player.currentItem.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), -1)
     val queue = player.queue.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
     val duration = player.duration.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0)
 
@@ -41,6 +40,10 @@ class MainViewModel @Inject constructor(
 
     fun pause() {
         player.pause()
+    }
+
+    fun stop() {
+        player.clearQueue()
     }
 
     fun seek(pos: Long) {

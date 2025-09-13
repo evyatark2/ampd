@@ -1,6 +1,5 @@
 package xyz.stalinsky.ampd.ui.viewmodel
 
-import android.net.Uri
 import androidx.lifecycle.ViewModel
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
@@ -13,6 +12,7 @@ import xyz.stalinsky.ampd.data.SettingsRepository
 import xyz.stalinsky.ampd.data.TracksRepository
 import xyz.stalinsky.ampd.model.Album
 import javax.inject.Inject
+import androidx.core.net.toUri
 
 @HiltViewModel
 class AlbumsViewModel @Inject constructor(
@@ -34,7 +34,7 @@ class AlbumsViewModel @Inject constructor(
             MediaItem.Builder()
                     .setMediaId(it.id)
                     .setMediaMetadata(metadata)
-                    .setUri(Uri.parse("${settings.libraryHost.first()}/${it.file}"))
+                    .setUri("${settings.libraryHost.first()}/${it.file}".toUri())
                     .build()
         })
     }
@@ -47,7 +47,7 @@ class AlbumsViewModel @Inject constructor(
             MediaItem.Builder()
                     .setMediaId(it.id)
                     .setMediaMetadata(metadata)
-                    .setUri(Uri.parse("${settings.libraryHost.first()}/${it.file}"))
+                    .setUri("${settings.libraryHost.first()}/${it.file}".toUri())
                     .build()
         })
     }

@@ -126,7 +126,7 @@ class MpdClient private constructor(
                         continue
                     }
 
-                    if (split.first() == "Time" || split.first() == "Range" || split.first() == "Last-Modified" || split.first() == "added") continue
+                    if (split.first() == "Time" || split.first() == "Range" || split.first() == "Last-Modified" || split.first() == "Added") continue
 
                     val tag = MpdTag.valueOf(split.first())
                     map[tag] = split.last()

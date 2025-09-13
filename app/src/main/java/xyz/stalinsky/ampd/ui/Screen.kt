@@ -3,21 +3,25 @@ package xyz.stalinsky.ampd.ui
 import android.net.Uri
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.PagerState
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material3.Button
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
@@ -50,11 +54,14 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
-import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.viewModelScope
+import androidx.lifecycle.viewmodel.compose.LocalViewModelStoreOwner
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
 import androidx.navigation.NavController
@@ -103,7 +110,6 @@ fun Main(viewModel: MainViewModel = hiltViewModel()) {
 
     val loading by viewModel.loading.collectAsState()
     val playing by viewModel.playing.collectAsState()
-    val currentItem by viewModel.currentItem.collectAsState()
     val queue by viewModel.queue.collectAsState()
     val duration by viewModel.duration.collectAsState()
 
@@ -131,17 +137,25 @@ fun Main(viewModel: MainViewModel = hiltViewModel()) {
         force = false
     }
 
+    val tabs by viewModel.tabs.collectAsState()
+    val defaultTab by viewModel.defaultTab.collectAsState()
+
+    val enabledTabs = remember(tabs) {
+        tabs.filter { it.enabled }
+    }
+
+    val pagerState = key(defaultTab) {
+        rememberPagerState(initialPage = defaultTab) {
+            enabledTabs.size
+        }
+    }
+
     var innerTitle by remember { mutableStateOf("") }
     val route by navController.currentBackStackEntryAsState()
-    PlayerSheetScaffold(state,
-            Modifier,
+    PlayerSheetScaffold(Modifier,
             (route?.destination?.route == "main" || route?.destination?.route == "artist/{id}" || route?.destination?.route == "album/{id}") && queue != null,
             {
-                Player(state.playerState, loading, playing, if (currentItem != -1) {
-                    queue?.run { Pair(this, currentItem) }
-                } else {
-                    null
-                }, {
+                Player(state.playerState, it, loading, playing, queue, {
                     viewModel.progress()
                 }, duration, {
                     viewModel.play()
@@ -165,41 +179,81 @@ fun Main(viewModel: MainViewModel = hiltViewModel()) {
                     else       -> innerTitle
                 }
 
-                TopAppBar({ Text(title) }, actions = {
-                    IconButton(onClick = { }) {
-                        Icon(Icons.Default.Search, "")
+                Column {
+                    TopAppBar({ Text(title) }, actions = {
+                        if (queue != null) {
+                            IconButton(onClick = {
+                                viewModel.stop()
+                            }) {
+                                Icon(Icons.Default.Stop, "Stop")
+                            }
+                        }
+                        IconButton(onClick = { }) {
+                            Icon(Icons.Default.Search, "Search")
+                        }
+                        IconButton(onClick = { navController.navigate("settings") }) {
+                            Icon(Icons.Default.Settings, "Settings")
+                        }
+                    })
+
+                    if (route?.destination?.route == "main") {
+                        TabRow(pagerState.currentPage) {
+                            val scope = rememberCoroutineScope()
+                            enabledTabs.forEachIndexed { i, tab ->
+                                when (tab.type!!) {
+                                    Settings.TabType.TAB_TYPE_ARTISTS -> Tab(selected = i == pagerState.currentPage, onClick = {
+                                        scope.launch {
+                                            pagerState.animateScrollToPage(i)
+                                        }
+                                    }, text = { Text(stringResource(R.string.artists)) })
+
+                                    Settings.TabType.TAB_TYPE_ALBUMS  -> Tab(selected = i == pagerState.currentPage, onClick = {
+                                        scope.launch {
+                                            pagerState.animateScrollToPage(i)
+                                        }
+                                    }, text = { Text(stringResource(R.string.albums)) })
+
+                                    Settings.TabType.TAB_TYPE_GENRES  -> Tab(selected = i == pagerState.currentPage, onClick = {
+                                        scope.launch {
+                                            pagerState.animateScrollToPage(i)
+                                        }
+                                    }, text = { Text(stringResource(R.string.genres)) })
+
+                                    Settings.TabType.UNRECOGNIZED     -> TODO()
+                                }
+                            }
+                        }
+
                     }
-                    IconButton(onClick = { navController.navigate("settings") }) {
-                        Icon(Icons.Default.Settings, "")
-                    }
-                })
-            }) {
+                }
+            }) { padding ->
         NavHost(navController, "main", Modifier.fillMaxSize()) {
             composable("main") {
                 innerTitle = ""
-                MainScreen(connectionState, { force = true }, navController)
+                MainScreen(connectionState, padding, { force = true },navController, pagerState, enabledTabs)
             }
 
             composable("settings") {
                 innerTitle = ""
-                SettingsScreen(navController)
+                SettingsScreen(navController, padding)
             }
 
             composable("tabs") {
                 innerTitle = ""
-                TabsSettingScreen()
+                TabsSettingScreen(padding)
             }
 
             composable("artist/{id}", listOf(navArgument("id") { type = NavType.StringType })) {
-                ArtistScreen(connectionState, { force = true }, { innerTitle = it })
+                ArtistScreen(connectionState, padding, { force = true }, { innerTitle = it })
             }
 
             composable("album/{id}", listOf(navArgument("id") { type = NavType.StringType })) {
-                AlbumScreen(connectionState, { force = true }, { innerTitle = it })
+                AlbumScreen(connectionState, padding, { force = true }, { innerTitle = it })
             }
 
-            composable("genre/{id}", listOf(navArgument("id") { type = NavType.StringType })) {
-                //GenreScreen(connectionState, { force = true }, { innerTitle = it })
+            composable("genre/{id}", listOf(navArgument("id") {
+                type = NavType.StringType
+            })) { //GenreScreen(connectionState, { force = true }, { innerTitle = it })
             }
         }
     }
@@ -209,61 +263,24 @@ fun Main(viewModel: MainViewModel = hiltViewModel()) {
 @Composable
 fun MainScreen(
         connectionState: MpdConnectionState<Unit>,
+        padding: PaddingValues,
         onRetry: () -> Unit,
         nav: NavController,
-        viewModel: MainViewModel = hiltViewModel()) {
-    val tabs by viewModel.tabs.collectAsState()
-    val defaultTab by viewModel.defaultTab.collectAsState()
+        pagerState: PagerState,
+        tabs: List<Settings.Tab>) {
 
-    val enabledTabs = remember(tabs) {
-        tabs.filter { it.enabled }
-    }
-
-    Column(Modifier) {
-        val pagerState = key(defaultTab) {
-            rememberPagerState(initialPage = defaultTab) {
-                enabledTabs.size
-            }
-        }
-
-        TabRow(selectedTabIndex = pagerState.currentPage) {
-            val scope = rememberCoroutineScope()
-            enabledTabs.forEachIndexed { i, tab ->
-                when (tab.type!!) {
-                    Settings.TabType.TAB_TYPE_ARTISTS -> Tab(selected = i == pagerState.currentPage, onClick = {
-                        scope.launch {
-                            pagerState.animateScrollToPage(i)
-                        }
-                    }, text = { Text(stringResource(R.string.artists)) })
-
-                    Settings.TabType.TAB_TYPE_ALBUMS  -> Tab(selected = i == pagerState.currentPage, onClick = {
-                        scope.launch {
-                            pagerState.animateScrollToPage(i)
-                        }
-                    }, text = { Text(stringResource(R.string.albums)) })
-
-                    Settings.TabType.TAB_TYPE_GENRES  -> Tab(selected = i == pagerState.currentPage, onClick = {
-                        scope.launch {
-                            pagerState.animateScrollToPage(i)
-                        }
-                    }, text = { Text(stringResource(R.string.genres)) })
-
-                    Settings.TabType.UNRECOGNIZED     -> TODO()
-                }
-            }
-        }
-
+    Column {
         HorizontalPager(pagerState, Modifier.fillMaxSize()) {
-            val tab = enabledTabs[it]
+            val tab = tabs[it]
             when (tab.type) {
                 Settings.TabType.TAB_TYPE_ARTISTS -> {
-                    ArtistsScreen(connectionState, onRetry, {
+                    ArtistsScreen(connectionState, padding, onRetry, {
                         nav.navigate("artist/${it}")
                     })
                 }
 
                 Settings.TabType.TAB_TYPE_ALBUMS  -> {
-                    AlbumsScreen(connectionState, onRetry, {
+                    AlbumsScreen(connectionState, padding, onRetry, {
                         nav.navigate("album/${it}")
                     }, {
                         nav.navigate("artist/${it}")
@@ -271,10 +288,11 @@ fun MainScreen(
                 }
 
                 Settings.TabType.TAB_TYPE_GENRES  -> {
-                    GenresScreen(connectionState, onRetry, {
+                    GenresScreen(connectionState, padding, onRetry, {
                         nav.navigate("genre/${it}")
                     })
                 }
+
                 Settings.TabType.UNRECOGNIZED     -> TODO()
                 null                              -> TODO()
             }
@@ -287,8 +305,8 @@ enum class Dialog {
 }
 
 @Composable
-fun SettingsScreen(nav: NavController, viewModel: SettingsViewModel = hiltViewModel()) {
-    Column {
+fun SettingsScreen(nav: NavController, padding: PaddingValues, viewModel: SettingsViewModel = hiltViewModel()) {
+    Column(Modifier.padding(padding)) {
         var showDialog by remember { mutableStateOf(false) }
         var dialog by remember { mutableStateOf(Dialog.LIBRARY_HOST_DIALOG) }
 
@@ -319,10 +337,13 @@ fun SettingsScreen(nav: NavController, viewModel: SettingsViewModel = hiltViewMo
                     showDialog = false
                 }
             }) {
-                val options = KeyboardOptions(autoCorrect = false, keyboardType = when (dialog) {
-                    Dialog.LIBRARY_HOST_DIALOG, Dialog.MPD_HOST_DIALOG -> KeyboardType.Uri
-                    Dialog.LIBRARY_PORT_DIALOG, Dialog.MPD_PORT_DIALOG -> KeyboardType.Number
-                })
+                val options = KeyboardOptions(capitalization = KeyboardCapitalization.None,
+                        autoCorrectEnabled = false,
+                        keyboardType = when (dialog) {
+                            Dialog.LIBRARY_HOST_DIALOG, Dialog.MPD_HOST_DIALOG -> KeyboardType.Uri
+                            Dialog.LIBRARY_PORT_DIALOG, Dialog.MPD_PORT_DIALOG -> KeyboardType.Number
+                        },
+                        imeAction = ImeAction.Done)
 
                 TextField(value, { value = it }, keyboardOptions = options)
             }
@@ -360,8 +381,8 @@ fun SettingsScreen(nav: NavController, viewModel: SettingsViewModel = hiltViewMo
 }
 
 @Composable
-fun TabsSettingScreen(viewModel: TabsSettingViewModel = hiltViewModel()) {
-    Column {
+fun TabsSettingScreen(padding: PaddingValues, viewModel: TabsSettingViewModel = hiltViewModel()) {
+    Column(Modifier.padding(padding)) {
         val tabs by viewModel.tabs.collectAsState()
         val defaultTab by viewModel.defaultTab.collectAsState()
         tabs.forEachIndexed { i, tab ->
@@ -385,6 +406,7 @@ fun TabsSettingScreen(viewModel: TabsSettingViewModel = hiltViewModel()) {
 @Composable
 fun ArtistsScreen(
         connectionState: MpdConnectionState<Unit>,
+        padding: PaddingValues,
         onRetry: () -> Unit,
         onClick: (String) -> Unit,
         viewModel: ArtistsViewModel = hiltViewModel()) {
@@ -405,7 +427,7 @@ fun ArtistsScreen(
     }
 
     ConnectionScreen(artistsState, onRetry) { artists ->
-        Artists(artists, {
+        Artists(artists, padding, {
             onClick(artists[it].id)
         }, {
             viewModel.viewModelScope.launch {
@@ -425,6 +447,7 @@ fun ArtistsScreen(
 @Composable
 fun Artists(
         artists: List<Artist>,
+        padding: PaddingValues,
         onClick: (Int) -> Unit,
         onAddToQueue: (Int) -> Unit,
         onPlayNext: (Int) -> Unit,
@@ -433,16 +456,16 @@ fun Artists(
     PullToRefreshBox(isRefreshing, onRefresh, Modifier
             .fillMaxSize()
             .clipToBounds()) {
-        LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(0.dp, 8.dp)) {
-                itemsIndexed(artists) { i, artist ->
-                    Artist(artist.name, {
-                        onClick(i)
-                    }, {
-                        onAddToQueue(i)
-                    }) {
-                        onPlayNext(i)
-                    }
+        LazyColumn(Modifier.fillMaxSize().consumeWindowInsets(padding), contentPadding = padding) {
+            itemsIndexed(artists) { i, artist ->
+                Artist(artist.name, {
+                    onClick(i)
+                }, {
+                    onAddToQueue(i)
+                }) {
+                    onPlayNext(i)
                 }
+            }
         }
     }
 }
@@ -477,6 +500,7 @@ fun Artist(name: String, onClick: () -> Unit, onAddToQueue: () -> Unit, onPlayNe
 @Composable
 fun AlbumsScreen(
         connectionState: MpdConnectionState<Unit>,
+        padding: PaddingValues,
         onRetry: () -> Unit,
         onClick: (String) -> Unit,
         onGoToArtist: (String) -> Unit,
@@ -532,7 +556,7 @@ fun AlbumsScreen(
                 }
             }).build()
         }
-        Albums(albums, loader, {
+        Albums(albums, padding, loader, {
             onClick(albums[it].id)
         }, {
             viewModel.viewModelScope.launch {
@@ -554,6 +578,7 @@ fun AlbumsScreen(
 @Composable
 fun Albums(
         albums: List<Album>,
+        padding: PaddingValues,
         loader: ImageLoader,
         onClick: (Int) -> Unit,
         onAddToQueue: (Int) -> Unit,
@@ -564,7 +589,7 @@ fun Albums(
     PullToRefreshBox(isRefreshing, onRefresh, Modifier
             .fillMaxSize()
             .clipToBounds()) {
-        LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(0.dp, 8.dp)) {
+        LazyColumn(Modifier.fillMaxSize().consumeWindowInsets(padding), contentPadding = padding) {
             itemsIndexed(albums) { i, album ->
                 Album({
                     AsyncImage(album.art, "", loader, Modifier.size(56.dp))
@@ -625,6 +650,7 @@ fun Album(
 @Composable
 fun GenresScreen(
         connectionState: MpdConnectionState<Unit>,
+        padding: PaddingValues,
         onRetry: () -> Unit,
         onClick: (String) -> Unit,
         viewModel: GenresViewModel = hiltViewModel()) {
@@ -645,7 +671,7 @@ fun GenresScreen(
     }
 
     ConnectionScreen(genresState, onRetry) { genres ->
-        Genres(genres, {
+        Genres(genres, padding, {
             onClick(genres[it])
         }, {
             viewModel.viewModelScope.launch {
@@ -665,15 +691,16 @@ fun GenresScreen(
 @Composable
 fun Genres(
         genres: List<String>,
+        padding: PaddingValues,
         onClick: (Int) -> Unit,
         onAddToQueue: (Int) -> Unit,
         onPlayNext: (Int) -> Unit,
         isRefreshing: Boolean,
         onRefresh: () -> Unit) {
-    PullToRefreshBox(isRefreshing, onRefresh,                                                                                                                                               Modifier
+    PullToRefreshBox(isRefreshing, onRefresh, Modifier
             .fillMaxSize()
             .clipToBounds()) {
-        LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(0.dp, 8.dp)) {
+        LazyColumn(Modifier.fillMaxSize().consumeWindowInsets(padding), contentPadding = padding) {
             itemsIndexed(genres) { i, genre ->
                 Genre(genre, {
                     onClick(i)
@@ -689,10 +716,7 @@ fun Genres(
 
 @Composable
 fun Genre(
-        title: String,
-        onClick: () -> Unit,
-        onAddToQueue: () -> Unit,
-        onPlayNext: () -> Unit) {
+        title: String, onClick: () -> Unit, onAddToQueue: () -> Unit, onPlayNext: () -> Unit) {
     ListItem({
         SingleLineText(title)
     }, Modifier.clickable {
@@ -721,6 +745,7 @@ fun Genre(
 @Composable
 fun ArtistScreen(
         connectionState: MpdConnectionState<Unit>,
+        padding: PaddingValues,
         onRetry: () -> Unit,
         setTitle: (String) -> Unit,
         viewModel: ArtistViewModel = hiltViewModel()) {
@@ -743,7 +768,7 @@ fun ArtistScreen(
     }
 
     ConnectionScreen(songs, onRetry) {
-        LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(0.dp, 8.dp)) {
+        LazyColumn(Modifier.fillMaxSize(), contentPadding = padding) {
             itemsIndexed(it) { i, song ->
                 ListItem({
                     SingleLineText(song.title)
@@ -769,6 +794,7 @@ fun ArtistScreen(
 @Composable
 fun AlbumScreen(
         connectionState: MpdConnectionState<Unit>,
+        padding: PaddingValues,
         onRetry: () -> Unit,
         setTitle: (String) -> Unit,
         viewModel: AlbumViewModel = hiltViewModel()) {
@@ -791,7 +817,7 @@ fun AlbumScreen(
     }
 
     ConnectionScreen(tracks, onRetry) {
-        LazyColumn(Modifier.fillMaxSize(1f), contentPadding = PaddingValues(0.dp, 8.dp)) {
+        LazyColumn(Modifier.fillMaxSize(1f), contentPadding = padding) {
             var multiside = false
             for (track in it) {
                 if (track.side != 1) {
@@ -832,14 +858,12 @@ fun <T> ConnectionScreen(state: Result<T>?, onRetry: () -> Unit, content: @Compo
         state.onSuccess {
             content(it)
         }.onFailure {
-            Box(Modifier.fillMaxSize()) {
-                Column(Modifier.align(Alignment.Center)) {
-                    Text(it.message ?: "", Modifier.align(Alignment.CenterHorizontally))
-                    Button({
-                        onRetry()
-                    }, Modifier.align(Alignment.CenterHorizontally)) {
-                        Text("Retry")
-                    }
+            Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.Center) {
+                Text(it.message ?: "", Modifier.align(Alignment.CenterHorizontally))
+                Button({
+                    onRetry()
+                }, Modifier.align(Alignment.CenterHorizontally)) {
+                    Text("Retry")
                 }
             }
         }
