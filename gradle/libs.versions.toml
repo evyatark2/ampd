@@ -1,5 +1,6 @@
 [versions]
 agp = "8.13.0"
+app = "1.7.0"
 coil = "2.7.0"
 hilt = "2.57.1"
 constraintlayoutCompose = "1.1.1"
@@ -25,6 +26,8 @@ protobufKotlinlite = "4.32.0"
 protobuf = "0.9.5"
 
 [libraries]
+androidx-app = { module = "androidx.car.app:app", version.ref = "app" }
+androidx-app-testing = { module = "androidx.car.app:app-testing", version.ref = "app" }
 androidx-hilt-navigation-compose = { module = "androidx.hilt:hilt-navigation-compose", version.ref = "hiltNavigationCompose" }
 coil = { module = "io.coil-kt:coil", version.ref = "coil" }
 coil-compose = { module = "io.coil-kt:coil-compose", version.ref = "coil" }
