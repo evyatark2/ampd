@@ -22,11 +22,12 @@ materialIconsExtended = "1.7.8"
 media3Exoplayer = "1.8.0"
 media3Session = "1.8.0"
 navigationCompose = "2.9.4"
-protobufKotlinlite = "4.32.0"
+protobufKotlinlite = "4.32.1"
 protobuf = "0.9.5"
 
 [libraries]
 androidx-app = { module = "androidx.car.app:app", version.ref = "app" }
+androidx-app-projected = { module = "androidx.car.app:app-projected", version.ref = "app" }
 androidx-app-testing = { module = "androidx.car.app:app-testing", version.ref = "app" }
 androidx-hilt-navigation-compose = { module = "androidx.hilt:hilt-navigation-compose", version.ref = "hiltNavigationCompose" }
 coil = { module = "io.coil-kt:coil", version.ref = "coil" }
@@ -60,7 +61,7 @@ androidx-media3-session = { group = "androidx.media3", name = "media3-session", 
 kotlinx-coroutines-guava = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-guava", version.ref = "kotlinxCoroutinesGuava" }
 ktor-network = { module = "io.ktor:ktor-network", version.ref = "ktorNetwork" }
 ktor-network-tls = { module = "io.ktor:ktor-network-tls", version.ref = "ktorNetworkTls" }
-protobuf-kotlin-lite = { module = "com.google.protobuf:protobuf-kotlin-lite", version.ref = "protobufKotlinlite" }
+protobuf-kotlin = { module = "com.google.protobuf:protobuf-kotlin", version.ref = "protobufKotlinlite" }
 
 [plugins]
 hilt = { id = "com.google.dagger.hilt.android", version.ref = "hilt" }

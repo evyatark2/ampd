@@ -9,9 +9,9 @@ import javax.inject.Singleton
 
 @Singleton
 class MpdRepository @Inject constructor(private val mpd: MpdRemoteDataSource) {
-    suspend fun connect(addr: SocketAddress, tls: Boolean) {
+    suspend fun connect(addr: SocketAddress, tls: Boolean, onConnect: () -> Unit) {
         withContext(Dispatchers.IO) {
-            mpd.setAddr(addr, tls)
+            mpd.setAddr(addr, tls, onConnect)
         }
     }
 }

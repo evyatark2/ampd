@@ -4,13 +4,14 @@ import androidx.media3.common.MediaItem
 import androidx.media3.common.Player
 import androidx.media3.common.Timeline
 import androidx.media3.session.MediaController
+import dagger.assisted.Assisted
+import dagger.assisted.AssistedInject
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.callbackFlow
-import javax.inject.Inject
 import javax.inject.Singleton
 
 @Singleton
-class PlayerRepository @Inject constructor(private val controller: MediaController) {
+class PlayerRepository @AssistedInject constructor(@Assisted private val controller: MediaController) {
     val isPlaying = callbackFlow {
         val listener = object : Player.Listener {
             override fun onIsPlayingChanged(isPlaying: Boolean) {
@@ -82,10 +83,8 @@ class PlayerRepository @Inject constructor(private val controller: MediaControll
 
             private fun send() {
                 val q = queue
-                if (q == null)
-                    trySend(null)
-                else
-                    trySend(Pair(q, currentItem))
+                if (q == null) trySend(null)
+                else trySend(Pair(q, currentItem))
             }
         }
 

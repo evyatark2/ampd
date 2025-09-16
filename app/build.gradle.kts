@@ -37,16 +37,16 @@ android {
             isDebuggable = true
         }
     }
+
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_1_8
         targetCompatibility = JavaVersion.VERSION_1_8
     }
+
     buildFeatures {
         compose = true
     }
-    // composeOptions {
-    //     kotlinCompilerExtensionVersion = "1.5.14"
-    // }
+
     packaging {
         resources {
             excludes += "/META-INF/{AL2.0,LGPL2.1}"
@@ -55,19 +55,14 @@ android {
 }
 
 dependencies {
-
     implementation(libs.hilt.android)
     implementation(libs.androidx.hilt.navigation.compose)
     kapt(libs.hilt.android.compiler)
-
     implementation(libs.coil)
     implementation(libs.coil.compose)
-
     implementation(libs.guava)
     implementation(libs.kotlinx.coroutines.guava)
-
-    implementation(libs.protobuf.kotlin.lite)
-
+    implementation(libs.protobuf.kotlin)
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)
     implementation(libs.androidx.lifecycle.runtime.compose)
@@ -78,23 +73,17 @@ dependencies {
     implementation(libs.androidx.ui.tooling.preview)
     implementation(libs.androidx.material3)
     implementation(libs.androidx.constraintlayout.compose)
-
     implementation(libs.androidx.lifecycle.viewmodel.compose)
-
     implementation(libs.androidx.media3.exoplayer)
     implementation(libs.androidx.media3.datasource.cronet)
     implementation(libs.androidx.media3.session)
-
     implementation(libs.androidx.datastore)
-
     implementation(libs.androidx.navigation.compose)
-
     implementation(libs.ktor.network)
     implementation(libs.ktor.network.tls)
-
     implementation(libs.androidx.material.icons.extended)
-
     implementation(libs.androidx.app)
+    implementation(libs.androidx.app.projected)
 
     testImplementation(libs.junit)
     testImplementation(libs.androidx.app.testing)
@@ -119,7 +108,7 @@ kapt {
 
 protobuf {
     protoc {
-        artifact = "com.google.protobuf:protoc:3.25.3"
+        artifact = "com.google.protobuf:protoc:4.32.1"
     }
 
     generateProtoTasks {

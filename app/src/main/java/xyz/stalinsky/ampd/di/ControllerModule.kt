@@ -1,5 +1,6 @@
 package xyz.stalinsky.ampd.di
 
+import android.app.Application
 import android.content.ComponentName
 import android.content.Context
 import androidx.media3.session.MediaController
@@ -17,6 +18,10 @@ import javax.inject.Singleton
 @Singleton
 class MediaControllerWrapper @Inject constructor(@ApplicationContext private val context: Context) {
     lateinit var mediaController: MediaController
+
+    init {
+        (context as Application)
+    }
 
     fun init(): ListenableFuture<MediaController> {
         val fut = MediaController.Builder(context,

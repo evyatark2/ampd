@@ -4,6 +4,7 @@ import io.ktor.network.sockets.SocketAddress
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.channels.SendChannel
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
@@ -24,52 +25,17 @@ import javax.inject.Inject
 import javax.inject.Singleton
 
 @Singleton
-class MpdRemoteDataSource @Inject constructor() {
-    var addr: SocketAddress? = null
-    var tls: Boolean = false
-
-    val lock = Mutex()
-    var client: MpdClient? = null
-
+class MpdRemoteDataSource @Inject constructor(private val client: MpdClient) {
     private suspend fun request(req: MpdRequest): Result<MpdResponse> {
         return withContext(Dispatchers.IO) {
-            val client = lock.withLock {
-                this@MpdRemoteDataSource.client ?: return@withContext Result.failure(NotYetConnectedException())
-            }
-
             try {
-                lock.withLock {
-                    Result.success(client.request(req))
-                }
-            } catch (_: EOFException) {
-                val addr = this@MpdRemoteDataSource.addr
-                if (addr == null) {
-                    Result.failure(NotYetConnectedException())
-                } else {
-                    val client = MpdClient(addr, tls)
-                    lock.withLock {
-                        this@MpdRemoteDataSource.client = client
-                    }
-
-                    try {
-                        Result.success(client.request(req))
-                    } catch (e: Throwable) {
-                        Result.failure(e)
-                    }
-                }
-            } catch (e: CancellationException) {
-                throw e
+                Result.success(client.request(req))
+            } catch(e: CancellationException) {
+                ensureActive()
+                Result.failure(e)
             } catch (e: Throwable) {
                 Result.failure(e)
             }
-        }
-    }
-
-    suspend fun setAddr(addr: SocketAddress, tls: Boolean) {
-        lock.withLock {
-            this.addr = addr
-            this.tls = tls
-            client = MpdClient(addr, tls)
         }
     }
 

@@ -61,9 +61,9 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.viewModelScope
-import androidx.lifecycle.viewmodel.compose.LocalViewModelStoreOwner
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
+import androidx.media3.session.MediaController
 import androidx.navigation.NavController
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
@@ -83,6 +83,7 @@ import coil.request.ImageRequest
 import coil.request.Options
 import io.ktor.network.sockets.InetSocketAddress
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import okio.Buffer
@@ -104,7 +105,7 @@ import xyz.stalinsky.ampd.ui.viewmodel.TabsSettingViewModel
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun Main(viewModel: MainViewModel = hiltViewModel()) {
+fun Main(controller: Flow<MediaController>, viewModel: MainViewModel = hiltViewModel()) {
     val state = rememberPlayerSheetScaffoldState()
     val navController = rememberNavController()
 
@@ -126,8 +127,9 @@ fun Main(viewModel: MainViewModel = hiltViewModel()) {
                 val addr = withContext(Dispatchers.IO) {
                     InetSocketAddress(host, port)
                 }
-                viewModel.connect(addr, tls)
-                connectionState = MpdConnectionState.Ok(Unit)
+                viewModel.connect(addr, tls) {
+                    connectionState = MpdConnectionState.Ok(Unit)
+                }
             } catch (e: Throwable) {
                 connectionState = MpdConnectionState.Error(e)
             }
@@ -152,23 +154,36 @@ fun Main(viewModel: MainViewModel = hiltViewModel()) {
 
     var innerTitle by remember { mutableStateOf("") }
     val route by navController.currentBackStackEntryAsState()
+    val scope = rememberCoroutineScope()
     PlayerSheetScaffold(Modifier,
             (route?.destination?.route == "main" || route?.destination?.route == "artist/{id}" || route?.destination?.route == "album/{id}") && queue != null,
             {
                 Player(state.playerState, it, loading, playing, queue, {
                     viewModel.progress()
                 }, duration, {
-                    viewModel.play()
+                    scope.launch {
+                        viewModel.play()
+                    }
                 }, {
-                    viewModel.pause()
+                    scope.launch {
+                        viewModel.pause()
+                    }
                 }, {
-                    viewModel.seek(it)
+                    scope.launch {
+                        viewModel.seek(it)
+                    }
                 }, {
-                    viewModel.next()
+                    scope.launch {
+                        viewModel.next()
+                    }
                 }, {
-                    viewModel.prev()
+                    scope.launch {
+                        viewModel.prev()
+                    }
                 }, {
-                    viewModel.skipTo(it)
+                    scope.launch {
+                        viewModel.skipTo(it)
+                    }
                 })
             },
             {
@@ -183,7 +198,9 @@ fun Main(viewModel: MainViewModel = hiltViewModel()) {
                     TopAppBar({ Text(title) }, actions = {
                         if (queue != null) {
                             IconButton(onClick = {
-                                viewModel.stop()
+                                scope.launch {
+                                    viewModel.stop()
+                                }
                             }) {
                                 Icon(Icons.Default.Stop, "Stop")
                             }
@@ -201,23 +218,29 @@ fun Main(viewModel: MainViewModel = hiltViewModel()) {
                             val scope = rememberCoroutineScope()
                             enabledTabs.forEachIndexed { i, tab ->
                                 when (tab.type!!) {
-                                    Settings.TabType.TAB_TYPE_ARTISTS -> Tab(selected = i == pagerState.currentPage, onClick = {
-                                        scope.launch {
-                                            pagerState.animateScrollToPage(i)
-                                        }
-                                    }, text = { Text(stringResource(R.string.artists)) })
+                                    Settings.TabType.TAB_TYPE_ARTISTS -> Tab(selected = i == pagerState.currentPage,
+                                            onClick = {
+                                                scope.launch {
+                                                    pagerState.animateScrollToPage(i)
+                                                }
+                                            },
+                                            text = { Text(stringResource(R.string.artists)) })
 
-                                    Settings.TabType.TAB_TYPE_ALBUMS  -> Tab(selected = i == pagerState.currentPage, onClick = {
-                                        scope.launch {
-                                            pagerState.animateScrollToPage(i)
-                                        }
-                                    }, text = { Text(stringResource(R.string.albums)) })
+                                    Settings.TabType.TAB_TYPE_ALBUMS  -> Tab(selected = i == pagerState.currentPage,
+                                            onClick = {
+                                                scope.launch {
+                                                    pagerState.animateScrollToPage(i)
+                                                }
+                                            },
+                                            text = { Text(stringResource(R.string.albums)) })
 
-                                    Settings.TabType.TAB_TYPE_GENRES  -> Tab(selected = i == pagerState.currentPage, onClick = {
-                                        scope.launch {
-                                            pagerState.animateScrollToPage(i)
-                                        }
-                                    }, text = { Text(stringResource(R.string.genres)) })
+                                    Settings.TabType.TAB_TYPE_GENRES  -> Tab(selected = i == pagerState.currentPage,
+                                            onClick = {
+                                                scope.launch {
+                                                    pagerState.animateScrollToPage(i)
+                                                }
+                                            },
+                                            text = { Text(stringResource(R.string.genres)) })
 
                                     Settings.TabType.UNRECOGNIZED     -> TODO()
                                 }
@@ -230,7 +253,7 @@ fun Main(viewModel: MainViewModel = hiltViewModel()) {
         NavHost(navController, "main", Modifier.fillMaxSize()) {
             composable("main") {
                 innerTitle = ""
-                MainScreen(connectionState, padding, { force = true },navController, pagerState, enabledTabs)
+                MainScreen(connectionState, padding, { force = true }, navController, pagerState, controller, enabledTabs)
             }
 
             composable("settings") {
@@ -267,6 +290,7 @@ fun MainScreen(
         onRetry: () -> Unit,
         nav: NavController,
         pagerState: PagerState,
+        controller: Flow<MediaController>,
         tabs: List<Settings.Tab>) {
 
     Column {
@@ -290,7 +314,7 @@ fun MainScreen(
                 Settings.TabType.TAB_TYPE_GENRES  -> {
                     GenresScreen(connectionState, padding, onRetry, {
                         nav.navigate("genre/${it}")
-                    })
+                    }, controller)
                 }
 
                 Settings.TabType.UNRECOGNIZED     -> TODO()
@@ -456,7 +480,9 @@ fun Artists(
     PullToRefreshBox(isRefreshing, onRefresh, Modifier
             .fillMaxSize()
             .clipToBounds()) {
-        LazyColumn(Modifier.fillMaxSize().consumeWindowInsets(padding), contentPadding = padding) {
+        LazyColumn(Modifier
+                .fillMaxSize()
+                .consumeWindowInsets(padding), contentPadding = padding) {
             itemsIndexed(artists) { i, artist ->
                 Artist(artist.name, {
                     onClick(i)
@@ -589,7 +615,9 @@ fun Albums(
     PullToRefreshBox(isRefreshing, onRefresh, Modifier
             .fillMaxSize()
             .clipToBounds()) {
-        LazyColumn(Modifier.fillMaxSize().consumeWindowInsets(padding), contentPadding = padding) {
+        LazyColumn(Modifier
+                .fillMaxSize()
+                .consumeWindowInsets(padding), contentPadding = padding) {
             itemsIndexed(albums) { i, album ->
                 Album({
                     AsyncImage(album.art, "", loader, Modifier.size(56.dp))
@@ -653,6 +681,7 @@ fun GenresScreen(
         padding: PaddingValues,
         onRetry: () -> Unit,
         onClick: (String) -> Unit,
+        controller: Flow<MediaController>,
         viewModel: GenresViewModel = hiltViewModel()) {
     var genresState: Result<List<String>>? by remember { mutableStateOf(null) }
 
@@ -700,7 +729,9 @@ fun Genres(
     PullToRefreshBox(isRefreshing, onRefresh, Modifier
             .fillMaxSize()
             .clipToBounds()) {
-        LazyColumn(Modifier.fillMaxSize().consumeWindowInsets(padding), contentPadding = padding) {
+        LazyColumn(Modifier
+                .fillMaxSize()
+                .consumeWindowInsets(padding), contentPadding = padding) {
             itemsIndexed(genres) { i, genre ->
                 Genre(genre, {
                     onClick(i)

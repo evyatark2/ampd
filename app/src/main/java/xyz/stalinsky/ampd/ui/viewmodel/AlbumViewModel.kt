@@ -17,7 +17,6 @@ class AlbumViewModel @Inject constructor(
         handle: SavedStateHandle,
         private val tracks: TracksRepository,
         private val albums: AlbumsRepository,
-        private val player: PlayerRepository,
         val settings: SettingsRepository) : ViewModel() {
     val id = handle.get<String>(ALBUM_ID_SAVED_STATE_KEY)!!
 
@@ -25,11 +24,11 @@ class AlbumViewModel @Inject constructor(
 
     suspend fun getTitle() = albums.getAlbumById(id).map { it.title }
 
-    suspend fun setQueue(items: List<Pair<String, MediaItem.Builder>>, i: Int) {
+    /*suspend fun setQueue(items: List<Pair<String, MediaItem.Builder>>, i: Int) {
         player.setQueue(items.map {
             it.second.setUri("${settings.libraryHost.first()}/${it.first}".toUri()).build()
         }, i)
-    }
+    }*/
 
     companion object {
         private const val ALBUM_ID_SAVED_STATE_KEY = "id"
